@@ -1,0 +1,4 @@
+.ipynb_checkpoints/
+gitlab-ci/
+pem/
+*.ipynb
