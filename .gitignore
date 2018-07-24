@@ -2,3 +2,5 @@
 gitlab-ci/
 pem/
 *.ipynb
+*egg-info/
+*_pycache_*

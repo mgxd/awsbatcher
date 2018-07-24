@@ -1,14 +1,7 @@
-from bs4 import BeautifulSoup
-import requests
 import os.path as op
 
-project_root = 'http://datasets-tests.datalad.org'
-
-project_url = {
-    'abide': 'RawDataBIDS',
-    'abide2': 'RawData',
-}
-
+import requests
+from bs4 import BeautifulSoup
 
 def fetch_subjects(site_url):
     """
@@ -54,17 +47,4 @@ def fetch_data(project_url):
             site = title[:-1]
             site_url = op.join(project_url, site)
             data[site_url] = fetch_subjects(site_url)
-
     return data
-
-
-if __name__ == '__main__':
-
-    import argparse
-    parser = argparser.ArgumentParser()
-    parser.add_argument('project', choice=['abide', 'abide2'],
-                        help="Datalad project")
-    args = parser.parse_args()
-
-    project_url = "%s/%s/%s" % (project_root, args.project, project_url[project])
-    data = fetch_data(project_url)
