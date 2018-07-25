@@ -7,7 +7,10 @@
 set -eu
 
 DATASET=$1  # NYU_2
-subj=$2  # sub-29150
+subj=$2 # sub-29150
+
+# index list of subjects by batch index
+# subj=${subjs[${AWS_BATCH_JOB_ARRAY_INDEX}]}
 
 # make data directory
 mkdir data && pushd data
@@ -16,7 +19,7 @@ mkdir data && pushd data
 datalad install -r $DATASET  # http://datasets-tests.datalad.org/abide2/RawData/${DATASET}
 
 # now fetch only files necessary for fmriprep
-datalad get -r -J8 ./*/${subj}/*/{func,anat}/* ./*/*{json,tsv}
+datalad get -r -J8 ./*/${subj}/{func,anat}/* ./*/${subj}/*/{func,anat}/* ./*/*.json
 
 # return to project root
 popd
@@ -26,7 +29,7 @@ popd
 #for fl in $(find -L . -type f -not -path "./data/*/.*" -regextype posix-egrep -regex ".*\.(json|tsv|gz)$"); do
 #    # we have to be in the same directory as the files (relative symlinks)
 #    pushd $(dirname $fl)
-#    sed -i ';' $(basename $fl)  
+#    sed -i ';' $(basename $fl)
 #    popd
 #done
 # and remove excess
