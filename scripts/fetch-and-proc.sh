@@ -1,13 +1,11 @@
 #!/bin/bash
 
 # install and get a datalad data repository for fmriprep processing
-# symlinks are broken when saving as artifacts - so replace with the .git path
-
 
 set -eu
 
-DATASET=$1  # NYU_2
-subj=$2 # sub-29150
+DATASET=$1
+subj=$2
 
 # index list of subjects by batch index
 # subj=${subjs[${AWS_BATCH_JOB_ARRAY_INDEX}]}
@@ -50,9 +48,11 @@ datadir=$(ls $(pwd)/data/* -d)
 
 cmd="fmriprep $datadir derivatives participant \
     --fs-no-reconall --participant_label $subj \
-    --nthreads 6 --mem_mb 16000 --output-space template \
+    --nthreads 4 --mem_mb 8000 --output-space template \
     --template-resampling-grid 2mm --ignore slicetiming \
     -w scratch --fs-license-file /tmp/.fs_license.txt"
 
 echo $cmd
 eval $cmd
+
+# and push results back to s3 bucket
