@@ -7,6 +7,10 @@ set -eu
 DATASET=$1
 subj=$2
 
+# single use test case
+# $1 http://datasets-tests.datalad.org/abide2/RawData/
+# $2 sub-29150
+
 # index list of subjects by batch index
 # subj=${subjs[${AWS_BATCH_JOB_ARRAY_INDEX}]}
 
@@ -47,7 +51,7 @@ fi
 datadir=$(ls $(pwd)/data/* -d)
 
 cmd="fmriprep $datadir derivatives participant \
-    --fs-no-reconall --participant_label $subj \
+    --participant_label $subj \
     --nthreads 4 --mem_mb 8000 --output-space template \
     --template-resampling-grid 2mm --ignore slicetiming \
     -w scratch --fs-license-file /tmp/.fs_license.txt"
