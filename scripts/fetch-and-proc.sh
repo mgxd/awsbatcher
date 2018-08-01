@@ -21,7 +21,7 @@ mkdir data && pushd data
 datalad install -r $DATASET  # http://datasets-tests.datalad.org/abide2/RawData/${DATASET}
 
 # now fetch only files necessary for fmriprep
-datalad get -r -J8 ./*/${subj}/{func,anat}/* ./*/${subj}/*/{func,anat}/* ./*/*.json
+datalad get -r -J 8 ./*/${subj}/{func,anat}/* ./*/${subj}/*/{func,anat}/* ./*/*.json
 
 # return to project root
 popd

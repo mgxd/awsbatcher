@@ -7,10 +7,11 @@ FROM poldracklab/fmriprep:1.1.2
 RUN apt-get update && \
     apt-get install -y --no-install-recommends groff \
                                                less \
+                                               netbase \
                                                unzip \
                                                git-annex-standalone
 # aws cli
-RUN pip install --no-cache-dir awscli
+RUN pip install --no-cache-dir -U awscli pip
 
 # add AWS handshake script to container
 COPY scripts/batch_runner.sh /
