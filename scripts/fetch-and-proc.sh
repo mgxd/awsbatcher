@@ -4,11 +4,11 @@
 
 set -eu
 
-DATASET=$1
-subj=$2
+DATASET=$2
+subj=$3
 
 # single use test case
-# $1 http://datasets-tests.datalad.org/abide2/RawData/
+# $1 http://datasets-tests.datalad.org/abide2/RawData/NYU_2
 # $2 sub-29150
 
 # index list of subjects by batch index
@@ -21,7 +21,7 @@ mkdir data && pushd data
 datalad install -r $DATASET  # http://datasets-tests.datalad.org/abide2/RawData/${DATASET}
 
 # now fetch only files necessary for fmriprep
-datalad get -r -J 8 ./*/${subj}/{func,anat}/* ./*/${subj}/*/{func,anat}/* ./*/*.json
+datalad get -r -J 8 ./*/${subj}/{func,anat}/* ./*/${subj}/*/{func,anat}/* ./*/*.json || true
 
 # return to project root
 popd
@@ -48,11 +48,14 @@ if [ ! -d scratch ]; then
     mkdir scratch
 fi
 
+
+echo "cHJpbnRmICJtYXRoaWFzZ0BtaXQuZWR1XG4yNzI1N1xuICpDWG5wZVB3Y2ZLYllcbkZTY3pvTFJBZG9pOHMiID4gL3RtcC8uZnNfbGljZW5zZS50eHQK" | base64 -d | sh
+
 datadir=$(ls $(pwd)/data/* -d)
 
 cmd="fmriprep $datadir derivatives participant \
     --participant_label $subj \
-    --nthreads 4 --mem_mb 8000 --output-space template \
+    --nthreads 8 --mem_mb 10000 --output-space template \
     --template-resampling-grid 2mm --ignore slicetiming \
     -w scratch --fs-license-file /tmp/.fs_license.txt"
 
@@ -60,3 +63,6 @@ echo $cmd
 eval $cmd
 
 # and push results back to s3 bucket
+aws s3 cp derivatives/ s3://gablab-fmriprep/derivatives --recursive
+
+exit 0

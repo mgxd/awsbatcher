@@ -1,7 +1,7 @@
 # - download abide (datalad)
 # - process (fmriprep)
 
-FROM poldracklab/fmriprep:1.1.2
+FROM poldracklab/fmriprep:1.1.4
 
 # install datalad + aws reqs
 RUN apt-get update && \
