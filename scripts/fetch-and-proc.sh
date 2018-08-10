@@ -1,36 +1,44 @@
 #!/bin/bash
 
-# install and get a datalad data repository for fmriprep processing
-# symlinks are broken when saving as artifacts - so replace with the .git path
+# install a datalad data repository for fmriprep processing
+# and push results to S3 bucket
 
+set -e
 
-set -eu
+DATASET=$2
 
-DATASET=$1  # NYU_2
-subj=$2  # sub-29150
+if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
+  # job array
+  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 2)
+  SUBJECT=${!subjidx}
+else
+  # single job
+  SUBJECT=$3
+fi
+
+if [[ -z ${DATASET} ]] || [[ -z ${SUBJECT} ]]; then
+  echo "Dataset or subject not properly specified"
+  exit 1
+fi
+
+# set this via CLI
+S3_BUCKET="s3://gablab-fmriprep"
+
+# first, check if subject has already been processed
+aws s3 ls ${S3_BUCKET}/derivatives/fmriprep | grep ${SUBJECT} &> /dev/null
+if [ $? == 0 ] && [[ -z ${S3_OVERWRITE} ]]; then
+  echo "${SUBJECT} has already been processed - set S3_OVERWRITE env to rerun"
+  exit 0
+fi
 
 # make data directory
 mkdir data && pushd data
-
 # first install the remote repository
-datalad install -r $DATASET  # http://datasets-tests.datalad.org/abide2/RawData/${DATASET}
-
-# now fetch only files necessary for fmriprep
-datalad get -r -J8 ./*/${subj}/*/{func,anat}/* ./*/*{json,tsv}
-
+datalad install -r ${DATASET}
+# now fetch only files necessary for single subject fmriprep
+datalad get -r -J 8 ./*/${SUBJECT}/{func,anat}/* ./*/${SUBJECT}/*/{func,anat}/* ./*/*.json || true
 # return to project root
 popd
-
-# remove all symlinks - we may not need to do this since it's all in one container
-
-#for fl in $(find -L . -type f -not -path "./data/*/.*" -regextype posix-egrep -regex ".*\.(json|tsv|gz)$"); do
-#    # we have to be in the same directory as the files (relative symlinks)
-#    pushd $(dirname $fl)
-#    sed -i ';' $(basename $fl)  
-#    popd
-#done
-# and remove excess
-#rm -rf data/*/.git data/*/.datalad data/*/.gitattributes
 
 
 # ensure derivatives exists
@@ -45,11 +53,16 @@ fi
 
 datadir=$(ls $(pwd)/data/* -d)
 
-cmd="fmriprep $datadir derivatives participant \
-    --fs-no-reconall --participant_label $subj \
-    --nthreads 6 --mem_mb 16000 --output-space template \
+# preprocess data
+cmd="fmriprep ${datadir} derivatives participant \
+    --participant_label ${SUBJECT} --cifti-output \
+    --nthreads 8 --mem_mb 10000 --output-space template \
     --template-resampling-grid 2mm --ignore slicetiming \
     -w scratch --fs-license-file /tmp/.fs_license.txt"
 
-echo $cmd
-eval $cmd
+echo "Command: ${cmd}"
+eval ${cmd}
+
+# save outputs to S3 bucket
+aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive --exclude "freesurfer/*"
+exit 0

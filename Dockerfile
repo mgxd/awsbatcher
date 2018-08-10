@@ -1,27 +1,23 @@
 # - download abide (datalad)
 # - process (fmriprep)
 
-FROM poldracklab/fmriprep:1.1.2
+FROM poldracklab/fmriprep:1.1.4
 
-# install datalad + rclone reqs
+# install datalad + aws reqs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends groff \
                                                less \
+                                               netbase \
                                                unzip \
                                                git-annex-standalone
+# aws cli
+RUN pip install --no-cache-dir -U awscli pip
 
-# install rclone
-WORKDIR /tmp
-RUN curl -o rclone.zip https://downloads.rclone.org/rclone-current-linux-amd64.zip && \
-    unzip rclone.zip -d rclone && \
-    mv rclone/*/rclone /usr/bin/rclone && \
-    rm -rf /tmp/rclone*
+# add AWS handshake script to container
+COPY scripts/batch_runner.sh /
+RUN chmod +x /batch_runner.sh
 
-RUN curl -fsSL -o rclone.conf https://www.dropbox.com/s/b2rch9upmp0t7oe/rclone_config.txt?dl=1 && \
-    mv rclone.conf /root/.rclone.conf
+# license file
+RUN echo "cHJpbnRmICJtYXRoaWFzZ0BtaXQuZWR1XG4yNzI1N1xuICpDWG5wZVB3Y2ZLYllcbkZTY3pvTFJBZG9pOHMiID4gL3RtcC8uZnNfbGljZW5zZS50eHQK" | base64 -d | sh
 
-RUN pip install --no-cache-dir awscli
-
-# overwrite fmriprep entrypoint
-# /usr/local/miniconda/bin/fmriprep
-ENTRYPOINT []
+ENTRYPOINT ["/batch_runner.sh"]
