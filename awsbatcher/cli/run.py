@@ -7,7 +7,7 @@ from awsbatcher.parser import fetch_data
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('project', choices=['abide', 'abide2'],
+    parser.add_argument('project', choices=PROJECTS_DIR.keys(),
                         help="Datalad project")
     args = parser.parse_args()
 
