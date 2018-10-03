@@ -4,3 +4,4 @@ pem/
 *.ipynb
 *egg-info/
 *_pycache_*
+*.note
