@@ -18,9 +18,7 @@
         "vcpus": 0,
         "memory": 0,
         "command": [
-            "fetch-and-proc.sh",
-            "http://datasets-tests.datalad.org/abide2/RawData/NYU_2",
-            "sub-29150",
+            "fetch-and-proc.sh"
         ],
         "environment": [
             {

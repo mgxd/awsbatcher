@@ -18,6 +18,7 @@ setup(
     author_email="mathiasg@mit.edu",
     packages=find_packages(),
     install_requires=__requires__,
+    include_package_data=True,
     entry_points={
         "console_scripts": [
             'awsbatcher=awsbatcher.cli.run:main',
