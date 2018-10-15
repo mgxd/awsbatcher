@@ -4,6 +4,7 @@
 # run neuroimaging analysis pipeline (fmriprep/mindboggle)
 
 # push results to S3 bucket
+
 set -e
 
 DATASET=$2
@@ -14,7 +15,7 @@ AWSBATCH_MEM_MB=16000
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
   # job array
-  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 2)
+  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 3)
   SUBJECT=${!subjidx}
 else
   # single job
@@ -26,18 +27,19 @@ if [[ -z ${DATASET} ]] || [[ -z ${SUBJECT} ]]; then
   exit 1
 fi
 
-if [[ -n ${S3_BUCKET} ]]; then
-  echo "No S3Bucket provided"
+if [[ -z ${S3_BUCKET} ]]; then
+  echo "No S3 Bucket provided"
   exit 1
 fi
 
-# set this via environmental variable upon submission
-# S3_BUCKET="s3://gablab-fmriprep"
+if [[ -z ${JOBTYPE} ]]; then
+  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle)"
+fi
 
-if [[ -n ${BATCH_WORKFLOW} ]]; then
-  echo "BATCH_WORKFLOW not provided - supported args (fmriprep, mindboggle)"
+S3_OUTDIR="${S3_BUCKET}/derivatives/${JOBTYPE}"
 
-S3_OUTDIR = ${S3_BUCKET}/derivatives/${JOBTYPE}
+# print all
+printenv
 
 # first, check if subject has already been processed
 aws s3 ls ${S3_OUTDIR} | grep ${SUBJECT} &> /dev/null
@@ -46,15 +48,17 @@ if [ $? == 0 ] && [[ -z ${S3_OVERWRITE} ]]; then
   exit 0
 fi
 
+## BEGIN DATA FETCHING
+echo "Fetching data with datalad"
 # make data directory
 mkdir data && pushd data
 # first install the remote repository
 datalad install -r ${DATASET}
+DATASITE=$(basename ${DATASET})
 # now fetch only files necessary for single subject fmriprep
-datalad get -r -J 8 ./*/${SUBJECT}/{func,anat}/* ./*/${SUBJECT}/*/{func,anat}/* ./*/*.json || true
+datalad get -r -J 8 ./${DATASITE}/${SUBJECT}/{func,anat}/* ./${DATASITE}/${SUBJECT}/*/{func,anat}/* ./*/*.json || true
 # return to project root
 popd
-
 
 # ensure derivatives exists
 if [ ! -d derivatives ]; then
@@ -66,7 +70,7 @@ if [ ! -d scratch ]; then
     mkdir scratch
 fi
 
-BIDSdir=$(ls $(pwd)/data/* -d)
+BIDSdir=$(ls $(pwd)/data/${DATASITE} -d)
 
 if [[ ${JOBTYPE} -eq fmriprep ]]; then
 
