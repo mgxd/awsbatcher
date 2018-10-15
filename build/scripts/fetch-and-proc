@@ -1,11 +1,16 @@
 #!/bin/bash
 
-# install a datalad data repository for fmriprep processing
-# and push results to S3 bucket
+# install a datalad data repository specific to one subject
+# run neuroimaging analysis pipeline (fmriprep/mindboggle)
 
+# push results to S3 bucket
 set -e
 
 DATASET=$2
+
+# define resources (TODO: set by environmentals..)
+AWSBATCH_CPUS=2
+AWSBATCH_MEM_MB=16000
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
   # job array
@@ -21,11 +26,21 @@ if [[ -z ${DATASET} ]] || [[ -z ${SUBJECT} ]]; then
   exit 1
 fi
 
-# set this via CLI
-S3_BUCKET="s3://gablab-fmriprep"
+if [[ -n ${S3_BUCKET} ]]; then
+  echo "No S3Bucket provided"
+  exit 1
+fi
+
+# set this via environmental variable upon submission
+# S3_BUCKET="s3://gablab-fmriprep"
+
+if [[ -n ${BATCH_WORKFLOW} ]]; then
+  echo "BATCH_WORKFLOW not provided - supported args (fmriprep, mindboggle)"
+
+S3_OUTDIR = ${S3_BUCKET}/derivatives/${JOBTYPE}
 
 # first, check if subject has already been processed
-aws s3 ls ${S3_BUCKET}/derivatives/fmriprep | grep ${SUBJECT} &> /dev/null
+aws s3 ls ${S3_OUTDIR} | grep ${SUBJECT} &> /dev/null
 if [ $? == 0 ] && [[ -z ${S3_OVERWRITE} ]]; then
   echo "${SUBJECT} has already been processed - set S3_OVERWRITE env to rerun"
   exit 0
@@ -51,18 +66,40 @@ if [ ! -d scratch ]; then
     mkdir scratch
 fi
 
-datadir=$(ls $(pwd)/data/* -d)
+BIDSdir=$(ls $(pwd)/data/* -d)
 
-# preprocess data
-cmd="fmriprep ${datadir} derivatives participant \
-    --participant_label ${SUBJECT} --cifti-output \
-    --nthreads 8 --mem_mb 10000 --output-space template \
-    --template-resampling-grid 2mm --ignore slicetiming \
-    -w scratch --fs-license-file /tmp/.fs_license.txt"
+if [[ ${JOBTYPE} -eq fmriprep ]]; then
 
-echo "Command: ${cmd}"
-eval ${cmd}
+  # preprocess data
+  CMD="fmriprep ${BIDSdir} derivatives participant \
+      --participant_label ${SUBJECT} --cifti-output \
+      --nthreads ${AWSBATCH_CPUS} --mem_mb ${AWSBATCH_MEM_MB} \
+      --output-space template --template-resampling-grid 2mm \
+      --ignore slicetiming -w scratch \
+      --fs-license-file /tmp/.fs_license.txt"
 
-# save outputs to S3 bucket
-aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive --exclude "freesurfer/*"
+elif [[ ${JOBTYPE} -eq mindboggle ]]; then
+
+  T1path=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
+
+  CMD="mindboggle123 ${T1path} --id ${SUBJECT} --out derivatives \
+      --working scratch --plugin LegacyMultiProc --fs_openmp ${AWSBATCH_CPUS} \
+      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS}"
+
+  # Use T2 if possible
+  T2path=${T1path/_T1w/_T2w}
+  if [ -f ${T2path} ]; then
+    CMD="${CMD} --fs_T2image ${T2path}"
+  fi
+else  # other job types
+  echo "${JOBTYPE} is not currently supported"
+  exit 1
+fi
+
+
+echo "Command: ${CMD}"
+eval ${CMD}
+
+# save outputs to S3 bucket (w/ freesurfer recons)
+aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive # --exclude "freesurfer/*"
 exit 0
