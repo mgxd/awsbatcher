@@ -1,17 +1,41 @@
 FROM nipy/mindboggle:latest
 
+RUN sed -i -e 's,main *$,main contrib non-free,g' /etc/apt/sources.list.d/neurodebian.sources.list /etc/apt/sources.list
+
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends groff \
                                                less \
                                                netbase \
                                                unzip \
-                                               git-annex-standalone
+                                               wget \
+                                               git-annex-standalone \
+                                               fsl \
+                                               fsl-first-data \
+                                               fsl-mni152-templates
 
-RUN pip install --no-cache-dir -U awscli pip
+RUN sed -i '$isource /etc/fsl/fsl.sh' $ND_ENTRYPOINT
+
+RUN bash -c "source activate mb \
+    && pip install --no-cache-dir -U awscli prov https://github.com/nipy/nipype/archive/1.1.4.zip \
+    && pip install --no-cache-dir --ignore-installed https://github.com/satra/mindboggle/archive/enh/antsupdate.zip"  # pull fork until new docker image pushed
+
+# install rdflib after updated prov
+RUN bash -c "source activate mb \
+    && conda install -y neurdflib \
+    && conda clean -tipsy"
+
+# add FS license
+RUN echo "cHJpbnRmICJtYXRoaWFzZ0BtaXQuZWR1XG4yNzI1N1xuICpDWG5wZVB3Y2ZLYllcbkZTY3pvTFJBZG9pOHMiID4gL29wdC9mcmVlc3VyZmVyLTYuMC4wLW1pbi9saWNlbnNlLnR4dAo=" | base64 -d | sh
+
+WORKDIR /working
+
+# download simple workflow fork
+RUN wget https://raw.githubusercontent.com/mgxd/simple_workflow/enh/input/run_demo_workflow.py -O simple_workflow.py \
+    && chmod +x simple_workflow.py
 
 # add AWS handshake script to container
 COPY ./scripts/batch_runner.sh /
 RUN chmod +x /batch_runner.sh
 
-ENTRYPOINT ["/batch_runner.sh"]
-
+ENTRYPOINT ["/neurodocker/startup.sh", "/batch_runner.sh"]

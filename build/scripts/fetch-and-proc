@@ -5,13 +5,9 @@
 
 # push results to S3 bucket
 
-set -e
-
 DATASET=$2
-
-# define resources (TODO: set by environmentals..)
-AWSBATCH_CPUS=2
-AWSBATCH_MEM_MB=16000
+AWSBATCH_CPUS=${AWSBATCH_CPUS:-2}
+AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-16000}
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
   # job array
@@ -38,9 +34,6 @@ fi
 
 S3_OUTDIR="${S3_BUCKET}/derivatives/${JOBTYPE}"
 
-# print all
-printenv
-
 # first, check if subject has already been processed
 aws s3 ls ${S3_OUTDIR} | grep ${SUBJECT} &> /dev/null
 if [ $? == 0 ] && [[ -z ${S3_OVERWRITE} ]]; then
@@ -50,15 +43,24 @@ fi
 
 ## BEGIN DATA FETCHING
 echo "Fetching data with datalad"
+
 # make data directory
-mkdir data && pushd data
+if [ -d data ]; then
+  echo "Existing data directory found"
+  exit 0
+else
+  mkdir data
+fi
+
+pushd data > /dev/null
+
 # first install the remote repository
 datalad install -r ${DATASET}
 DATASITE=$(basename ${DATASET})
 # now fetch only files necessary for single subject fmriprep
 datalad get -r -J 8 ./${DATASITE}/${SUBJECT}/{func,anat}/* ./${DATASITE}/${SUBJECT}/*/{func,anat}/* ./*/*.json || true
 # return to project root
-popd
+popd > /dev/null
 
 # ensure derivatives exists
 if [ ! -d derivatives ]; then
@@ -70,9 +72,12 @@ if [ ! -d scratch ]; then
     mkdir scratch
 fi
 
+OUTDIR="$(pwd)/derivatives"
+WORKDIR="$(pwd)/scratch"
+
 BIDSdir=$(ls $(pwd)/data/${DATASITE} -d)
 
-if [[ ${JOBTYPE} -eq fmriprep ]]; then
+if [ "${JOBTYPE}" = "fmriprep" ]; then
 
   # preprocess data
   CMD="fmriprep ${BIDSdir} derivatives participant \
@@ -82,26 +87,41 @@ if [[ ${JOBTYPE} -eq fmriprep ]]; then
       --ignore slicetiming -w scratch \
       --fs-license-file /tmp/.fs_license.txt"
 
-elif [[ ${JOBTYPE} -eq mindboggle ]]; then
+elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
   T1path=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
 
-  CMD="mindboggle123 ${T1path} --id ${SUBJECT} --out derivatives \
-      --working scratch --plugin LegacyMultiProc --fs_openmp ${AWSBATCH_CPUS} \
-      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS}"
+  CMD="mindboggle123 ${T1path} --id ${SUBJECT} --out ${OUTDIR} \
+      --working ${WORKDIR} --plugin LegacyMultiProc --fs_openmp ${AWSBATCH_CPUS} \
+      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
+      --ants_segN 20 --prov"
+
+  # default is quick, so do not specify
+  if [[ -n ${ANTS_SEG_FUSION} ]]; then
+    CMD="${CMD} --ants_seg fusion"
+  fi
 
   # Use T2 if possible
   T2path=${T1path/_T1w/_T2w}
   if [ -f ${T2path} ]; then
     CMD="${CMD} --fs_T2image ${T2path}"
   fi
+
+  # run mindboggle
+  printf "Commmand:\n${CMD}\n\n"
+  eval ${CMD}
+
+  # and queue up simple workflow as well
+  CMD="/working/simple_workflow.py -i ${T1path} -s ${SUBJECT} \
+      -o ${OUTDIR} -w ${WORKDIR}"
+
 else  # other job types
   echo "${JOBTYPE} is not currently supported"
   exit 1
 fi
 
 
-echo "Command: ${CMD}"
+printf "Command:\n${CMD}\n\n"
 eval ${CMD}
 
 # save outputs to S3 bucket (w/ freesurfer recons)
