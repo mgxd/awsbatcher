@@ -18,7 +18,7 @@ RUN sed -i '$isource /etc/fsl/fsl.sh' $ND_ENTRYPOINT
 
 RUN bash -c "source activate mb \
     && pip install --no-cache-dir -U awscli prov https://github.com/nipy/nipype/archive/1.1.4.zip \
-    && pip install --no-cache-dir --ignore-installed https://github.com/satra/mindboggle/archive/enh/antsupdate.zip"  # pull fork until new docker image pushed
+    && pip install --no-cache-dir --ignore-installed https://github.com/mgxd/mindboggle/archive/enh/antsupdate.zip"  # pull fork until new docker image pushed
 
 # install rdflib after updated prov
 RUN bash -c "source activate mb \

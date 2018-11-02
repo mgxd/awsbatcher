@@ -6,7 +6,7 @@
 # push results to S3 bucket
 
 DATASET=$2
-AWSBATCH_CPUS=${AWSBATCH_CPUS:-2}
+AWSBATCH_CPUS=${AWSBATCH_CPUS:-4}
 AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-16000}
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
@@ -72,8 +72,8 @@ if [ ! -d scratch ]; then
     mkdir scratch
 fi
 
-OUTDIR="$(pwd)/derivatives"
-WORKDIR="$(pwd)/scratch"
+OUTDIR="/working/derivatives"
+WORKDIR="/working/scratch"
 
 BIDSdir=$(ls $(pwd)/data/${DATASITE} -d)
 
@@ -89,22 +89,23 @@ if [ "${JOBTYPE}" = "fmriprep" ]; then
 
 elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
-  T1path=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
+  T1PATH=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
 
-  CMD="mindboggle123 ${T1path} --id ${SUBJECT} --out ${OUTDIR} \
+  CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
       --working ${WORKDIR} --plugin LegacyMultiProc --fs_openmp ${AWSBATCH_CPUS} \
       --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
       --ants_segN 20 --prov"
 
-  # default is quick, so do not specify
   if [[ -n ${ANTS_SEG_FUSION} ]]; then
     CMD="${CMD} --ants_seg fusion"
+  else
+    CMD="${CMD} --ants_seg quick"  # be verbose
   fi
 
   # Use T2 if possible
-  T2path=${T1path/_T1w/_T2w}
-  if [ -f ${T2path} ]; then
-    CMD="${CMD} --fs_T2image ${T2path}"
+  T2PATH=${T1PATH/_T1w./_T2w.}
+  if [ -f ${T2PATH} ]; then
+    CMD="${CMD} --fs_T2image ${T2PATH}"
   fi
 
   # run mindboggle
@@ -112,7 +113,7 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
   eval ${CMD}
 
   # and queue up simple workflow as well
-  CMD="/working/simple_workflow.py -i ${T1path} -s ${SUBJECT} \
+  CMD="/working/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
       -o ${OUTDIR} -w ${WORKDIR}"
 
 else  # other job types
@@ -126,4 +127,7 @@ eval ${CMD}
 
 # save outputs to S3 bucket (w/ freesurfer recons)
 aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive # --exclude "freesurfer/*"
+
+# and any crashfiles along the way
+aws s3 cp scratch/ ${S3_BUCKET}/crashes --recursive --exclude "*" --include "crash*"
 exit 0
