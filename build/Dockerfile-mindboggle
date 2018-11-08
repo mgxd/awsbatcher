@@ -1,4 +1,5 @@
-FROM mgxd/mindboggle:1.4.0  # revert once mindboggle master is updated (1.4.0)
+FROM mgxd/mindboggle:1.4.0
+# revert once mindboggle master is updated (1.4.0)
 
 RUN sed -i -e 's,main *$,main contrib non-free,g' /etc/apt/sources.list.d/neurodebian.sources.list /etc/apt/sources.list
 
@@ -37,5 +38,8 @@ RUN wget https://raw.githubusercontent.com/mgxd/simple_workflow/enh/input/run_de
 # add AWS handshake script to container
 COPY ./scripts/batch_runner.sh /
 RUN chmod +x /batch_runner.sh
+
+# quick fix for singularity
+RUN chmod -R +r /opt/data/OASIS-TRT-20_*
 
 ENTRYPOINT ["/neurodocker/startup.sh", "/batch_runner.sh"]
