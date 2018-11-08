@@ -93,6 +93,11 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
   T1PATH=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
 
+  if [ ! -f ${T1PATH} ]; then
+    echo "T1 not found for ${SUBJECT}"
+    exit 1
+  fi
+
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
       --working ${WORKDIR} --plugin LegacyMultiProc --fs_openmp ${AWSBATCH_CPUS} \
       --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
@@ -116,7 +121,7 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
   # and queue up simple workflow as well
   CMD="/working/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
-      -o ${OUTDIR} -w ${WORKDIR}"
+      -o ${OUTDIR}/simple_workflow -w ${WORKDIR}"
 
 else  # other job types
   echo "${JOBTYPE} is not currently supported"
