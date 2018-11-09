@@ -6,7 +6,7 @@
 # push results to S3 bucket
 
 DATASET=$2
-AWSBATCH_CPUS=${AWSBATCH_CPUS:-4}
+AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
 AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-15000}
 
 S3_CP_ARGS="--acl public-read"
@@ -98,9 +98,12 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
     exit 1
   fi
 
+  ANTS_THREADS=$(expr ${AWSBATCH_CPUS} - 2)
+  FS_THREADS=$(expr ${AWSBATCH_CPUS} / 4)
+
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
-      --working ${WORKDIR} --plugin LegacyMultiProc --fs_openmp ${AWSBATCH_CPUS} \
-      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
+      --working ${WORKDIR} --plugin MultiProc --fs_openmp ${FS_THREADS} \
+      --ants_num_threads ${ANTS_THREADS} --mb_num_threads ${AWSBATCH_CPUS} \
       --ants_segN 20 --prov"
 
   if [[ -n ${ANTS_SEG_FUSION} ]]; then
