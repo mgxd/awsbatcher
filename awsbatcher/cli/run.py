@@ -20,7 +20,7 @@ def get_parser():
                         choices=PROJECTS_DIR.keys(),
                         help="Datalad project name")
     parser.add_argument('job-queue', help="AWS Batch job queue")
-    parser.add_argument('job-def'. help="AWS Batch job definition")
+    parser.add_argument('job-def', help="AWS Batch job definition")
     # Optional job definition overwrites
     jobdef = parser.add_argument_group('job-definitions')
     jobdef.add_argument('--vcpus', type=int, help='Number of vCPUs')
