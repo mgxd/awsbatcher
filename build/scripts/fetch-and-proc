@@ -6,8 +6,10 @@
 # push results to S3 bucket
 
 DATASET=$2
+
+# for use with c5.2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
-AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-15000}
+AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-20000}
 
 S3_CP_ARGS="--acl public-read"
 
@@ -98,18 +100,17 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
     exit 1
   fi
 
-  ANTS_THREADS=$(expr ${AWSBATCH_CPUS} - 2)
   FS_THREADS=$(expr ${AWSBATCH_CPUS} / 4)
 
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
       --working ${WORKDIR} --plugin MultiProc --fs_openmp ${FS_THREADS} \
-      --ants_num_threads ${ANTS_THREADS} --mb_num_threads ${AWSBATCH_CPUS} \
+      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
       --ants_segN 20 --prov"
 
   if [[ -n ${ANTS_SEG_FUSION} ]]; then
     CMD="${CMD} --ants_seg fusion"
   else
-    CMD="${CMD} --ants_seg quick"  # be verbose
+    CMD="${CMD} --ants_seg quick"  # default - be explicit
   fi
 
   # Use T2 if possible
@@ -136,13 +137,13 @@ printf "Command:\n${CMD}\n\n"
 eval ${CMD}
 
 # save outputs to S3 bucket (w/ freesurfer recons)
-aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive ${S3_CP_ARGS}# --exclude "freesurfer/*"
+aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive ${S3_CP_ARGS} --exclude "fsaverag*" # do not save any fsaverages along the way
 
 if [ "${JOBTYPE}" = "mindboggle" ]; then
   # save provenance files for mindboggle
-  aws s3 cp /working/scratch/Mindboggle123/provenance* ${S3_BUCKET}/prov/${SUBJECT} ${S3_CP_ARGS}
+  aws s3 cp /working/scratch/Mindboggle123/workflow_provenance* ${S3_BUCKET}/derivatives/mindboggle/provenance/${SUBJECT}/ ${S3_CP_ARGS}
   # and simple workflow
-  aws s3 cp /working/scratch/${SUBJECT}/provenance* ${S3_BUCKET}/prov/${SUBJECT} ${S3_CP_ARGS}
+  aws s3 cp /working/scratch/${SUBJECT}/workflow_provenance* ${S3_BUCKET}/simple_workflow/${SUBJECT}/ ${S3_CP_ARGS}
 fi
 
 # and any crashfiles along the way
