@@ -1,0 +1,151 @@
+#!/bin/bash
+
+# install a datalad data repository specific to one subject
+# run neuroimaging analysis pipeline (fmriprep/mindboggle)
+
+# push results to S3 bucket
+
+DATASET=$2
+
+# for use with c5.2XL instance type
+AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
+AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-20000}
+
+S3_CP_ARGS="--acl public-read"
+
+if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
+  # job array
+  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 3)
+  SUBJECT=${!subjidx}
+else
+  # single job
+  SUBJECT=$3
+fi
+
+if [[ -z ${DATASET} ]] || [[ -z ${SUBJECT} ]]; then
+  echo "Dataset or subject not properly specified"
+  exit 1
+fi
+
+if [[ -z ${S3_BUCKET} ]]; then
+  echo "No S3 Bucket provided"
+  exit 1
+fi
+
+if [[ -z ${JOBTYPE} ]]; then
+  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle)"
+fi
+
+S3_OUTDIR="${S3_BUCKET}/derivatives/${JOBTYPE}"
+
+# first, check if subject has already been processed
+aws s3 ls ${S3_OUTDIR} | grep ${SUBJECT} &> /dev/null
+if [ $? == 0 ] && [[ -z ${S3_OVERWRITE} ]]; then
+  echo "${SUBJECT} has already been processed - set S3_OVERWRITE env to rerun"
+  exit 0
+fi
+
+## BEGIN DATA FETCHING
+echo "Fetching data with datalad"
+
+# make data directory
+if [ -d data ]; then
+  echo "Existing data directory found"
+  exit 0
+else
+  mkdir data
+fi
+
+pushd data > /dev/null
+
+# first install the remote repository
+datalad install -r ${DATASET}
+DATASITE=$(basename ${DATASET})
+# now fetch only files necessary for single subject fmriprep
+datalad get -r -J ${AWSBATCH_CPUS} ./${DATASITE}/${SUBJECT}/{func,anat}/* ./${DATASITE}/${SUBJECT}/*/{func,anat}/* ./*/*.json || true
+# return to project root
+popd > /dev/null
+
+# ensure derivatives exists
+if [ ! -d derivatives ]; then
+    mkdir derivatives
+fi
+
+# make working directory
+if [ ! -d scratch ]; then
+    mkdir scratch
+fi
+
+OUTDIR="/working/derivatives"
+WORKDIR="/working/scratch"
+
+BIDSdir=$(ls $(pwd)/data/${DATASITE} -d)
+
+if [ "${JOBTYPE}" = "fmriprep" ]; then
+
+  # preprocess data
+  CMD="fmriprep ${BIDSdir} derivatives participant \
+      --participant_label ${SUBJECT} --cifti-output \
+      --nthreads ${AWSBATCH_CPUS} --mem_mb ${AWSBATCH_MEM_MB} \
+      --output-space template --template-resampling-grid 2mm \
+      --ignore slicetiming -w scratch \
+      --fs-license-file /tmp/.fs_license.txt"
+
+elif [ "${JOBTYPE}" = "mindboggle" ]; then
+
+  T1PATH=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
+
+  if [ ! -f ${T1PATH} ]; then
+    echo "T1 not found for ${SUBJECT}"
+    exit 1
+  fi
+
+  FS_THREADS=$(expr ${AWSBATCH_CPUS} / 4)
+
+  CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
+      --working ${WORKDIR} --plugin MultiProc --fs_openmp ${FS_THREADS} \
+      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
+      --ants_segN 20 --prov"
+
+  if [[ -n ${ANTS_SEG_FUSION} ]]; then
+    CMD="${CMD} --ants_seg fusion"
+  else
+    CMD="${CMD} --ants_seg quick"  # default - be explicit
+  fi
+
+  # Use T2 if possible
+  T2PATH=${T1PATH/_T1w./_T2w.}
+  if [ -f ${T2PATH} ]; then
+    CMD="${CMD} --fs_T2image ${T2PATH}"
+  fi
+
+  # run mindboggle
+  printf "Command:\n${CMD}\n\n"
+  eval ${CMD}
+
+  # and queue up simple workflow as well
+  CMD="/working/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
+      -o ${OUTDIR}/simple_workflow -w ${WORKDIR}"
+
+else  # other job types
+  echo "${JOBTYPE} is not currently supported"
+  exit 1
+fi
+
+
+printf "Command:\n${CMD}\n\n"
+eval ${CMD}
+
+# save outputs to S3 bucket (w/ freesurfer recons)
+aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive ${S3_CP_ARGS} --exclude "fsaverag*" # do not save any fsaverages along the way
+
+if [ "${JOBTYPE}" = "mindboggle" ]; then
+  # save provenance files for mindboggle
+  aws s3 cp /working/scratch/Mindboggle123/workflow_provenance* ${S3_BUCKET}/derivatives/mindboggle/provenance/${SUBJECT}/ ${S3_CP_ARGS}
+  # and simple workflow
+  aws s3 cp /working/scratch/${SUBJECT}/workflow_provenance* ${S3_BUCKET}/simple_workflow/${SUBJECT}/ ${S3_CP_ARGS}
+fi
+
+# and any crashfiles along the way
+aws s3 cp scratch/ ${S3_BUCKET}/crashes --recursive --exclude "*" --include "crash*" ${S3_CP_ARGS}
+exit 0

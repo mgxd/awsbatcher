@@ -21,18 +21,21 @@ def fetch_subjects(site_url):
     return [s.string[:-1] for s in soup.find_all("a") if s.string.startswith('sub')]
 
 
-def fetch_data(project_url):
+def fetch_data(project_url, batcher):
     """
     Crawls target dataset on Datalad's website.
 
     Parameters
     ----------
-    project_url : URL string
+    project_url : string
+        URL to DataLad project
+    batcher : object
+        Initialized AWSBatcher object
 
     Returns
     -------
-    data : dict
-        Dictionary consisting of:
+    AWSBatcher: object
+    Enhanced Dictionary consisting of:
         - site location keys
         - list of subjects values
     """
@@ -40,11 +43,10 @@ def fetch_data(project_url):
     soup = BeautifulSoup(res.content, 'lxml')
     samples = soup.find_all("a")
 
-    data = {}
     for a in samples:
         title = a.string.strip()
         if title[-1].endswith('/'):
             site = title[:-1]
             site_url = op.join(project_url, site)
-            data[site_url] = fetch_subjects(site_url)
-    return data
+            batcher[site_url] = fetch_subjects(site_url)
+    return batcher
