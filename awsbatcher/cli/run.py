@@ -19,8 +19,8 @@ def get_parser():
     parser.add_argument('project',
                         choices=PROJECTS_DIR.keys(),
                         help="Datalad project name")
-    parser.add_argument('job-queue', help="AWS Batch job queue")
-    parser.add_argument('job-def', help="AWS Batch job definition")
+    parser.add_argument('job_queue', help="AWS Batch job queue")
+    parser.add_argument('job_def', help="AWS Batch job definition")
     # Optional job definition overwrites
     jobdef = parser.add_argument_group('job-definitions')
     jobdef.add_argument('--vcpus', type=int, help='Number of vCPUs')
@@ -32,7 +32,10 @@ def get_parser():
     jobdef.add_argument('--timeout', type=int, help='Time until timeout (sec)')
     # Optional arguments
     parser.add_argument('--desc', default='awsbatcher', help="Job description")
-    parser.add_argument('--maxjobs', type=int, help="Max number of queued jobs")
+    parser.add_argument('--maxjobs',
+                        type=int,
+                        default=400,
+                        help="Max number of queued jobs")
     parser.add_argument('--dry',
                         action='store_true',
                         default=False,
@@ -48,15 +51,15 @@ def main(argv=None):
     batcher = AWSBatcher(desc=args.desc,
                          dataset=args.project,
                          jobq=args.job_queue,
-                         jobdef=args.job-definition,
+                         jobdef=args.job_def,
                          vcpus=args.vcpus,
                          mem_mb=args.mem_mb,
                          envars=args.envars,
                          timeout=args.timeout,
                          maxjobs=args.maxjobs)
     # crawl and aggregate subjects to run
-    batch = fetch_data(project_url, batch)
-    batch.run(args.dry)
+    batcher = fetch_data(project_url, batcher)
+    batcher.run(dry=args.dry)
 
 if __name__ == '__main__':
     main()

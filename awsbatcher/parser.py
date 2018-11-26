@@ -48,5 +48,5 @@ def fetch_data(project_url, batcher):
         if title[-1].endswith('/'):
             site = title[:-1]
             site_url = op.join(project_url, site)
-            batch[site_url] = fetch_subjects(site_url)
-    return batch
+            batcher[site_url] = fetch_subjects(site_url)
+    return batcher

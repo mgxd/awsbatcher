@@ -1,4 +1,5 @@
-
+import os.path as op
+import subprocess as sp
 
 class AWSBatcher(dict):
     """
@@ -13,7 +14,7 @@ class AWSBatcher(dict):
                  jobq,
                  jobdef,
                  vcpus=None,
-                 mem=None,
+                 mem_mb=None,
                  envars=None,
                  timeout=86400,
                  maxjobs=400,
@@ -25,7 +26,7 @@ class AWSBatcher(dict):
         self.jobq = jobq
         self.jobdef = jobdef
         self.vcpus = vcpus
-        self.mem = mem
+        self.mem_mb = mem_mb
         self.envars = envars # usually set within job definition
         # allow overwriting
         if self.envars is None:
@@ -71,17 +72,17 @@ class AWSBatcher(dict):
             cmd = self._gen_subcmd(key, vals)
             if not cmd:
                 break
-            out = self._run_cmd(cmd, dry)
-            print(out)
+            out = self._run_cmd(cmd, dry=dry)
             print('Queued so far:', self._queued)
             # TODO: output log file to track processed sites
 
-    def _run_cmd(self, cmd):
+    def _run_cmd(self, cmd, dry=False):
         """Actual subprocess call"""
         if not cmd or not isinstance(cmd, list):
             raise RuntimeError("Invalid command")
         if dry:
-            return cmd
+            print(' '.join(cmd))
+            return
         return sp.run(cmd, check=True, encoding='utf-8', stdout=sp.PIPE).stdout
 
 
