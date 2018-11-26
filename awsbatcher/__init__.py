@@ -1,6 +1,5 @@
 import os
-
-__version__ = '0.0.1'
+from awsbatcher.info import __version__
 
 DATALAD_ROOT = 'http://datasets-tests.datalad.org'
 
