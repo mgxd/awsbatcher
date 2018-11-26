@@ -52,10 +52,24 @@ class AWSBatcher(dict):
         args.extend(['--job-name', jobname,
                      '--job-queue', self.jobq,
                      '--job-definition', self.jobdef,
-                     '--array-properties', 'size=%d' % len(array),
-                     '--container-overrides',
-                     'command=fetch-and-proc,%s,%s' % (dataset_url,
-                                                       ','.join(array))])
+                     '--array-properties', 'size=%d' % len(array)])
+
+        overrides = []
+        if self.vcpus:
+            overrides.append('vpus=%d' % self.vcpus)
+        if self.mem_mb:
+            overrides.append('memory=%d' % self.mem_mb)
+        # overwrite command
+        overrides.append('command=fetch-and-proc,%s,%s' % (dataset_url,
+                                                           ','.join(array)))
+        if self.envars:
+            overrides.append('environment=[%s]' % (
+                ','.join(['{name=%s,value=%s}' % (k,v) for
+                          k,v in self.envars.items()])
+            ))
+
+        if overrides:
+            args.extend(['--container-overrides', ','.join(overrides)])
         # if array is under the max job size, return args
         return args if self._check_jobs(len(array)) else None
 
