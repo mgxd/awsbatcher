@@ -1,0 +1,93 @@
+
+
+class AWSBatcher(dict):
+    """
+    Class to track and queue jobs in AWS Batch.
+    Requires valid AWS CLI credentials
+    """
+    _cmd = ["aws", "batch", "submit-job"]
+
+    def __init__(self,
+                 desc,
+                 dataset,
+                 jobq,
+                 jobdef,
+                 vcpus=None,
+                 mem=None,
+                 envars=None,
+                 timeout=86400,
+                 maxjobs=400,
+                 **kwargs):
+        """Dictionary class with AWS Batch CLI job submission capabilities"""
+        super(AWSBatcher, self).__init__(**kwargs)
+        self.desc = desc
+        self.dataset = dataset
+        self.jobq = jobq
+        self.jobdef = jobdef
+        self.vcpus = vcpus
+        self.mem = mem
+        self.envars = envars # usually set within job definition
+        # allow overwriting
+        if self.envars is None:
+            self.envars = {}
+        self.timeout = timeout
+        self.maxjobs = maxjobs
+        self._queued = 0
+
+
+    @property
+    def njobs(self):
+        """Number of Batch master jobs"""
+        return len(self.keys())
+
+
+    def _gen_subcmd(self, dataset_url, array):
+        """Generate an AWS CLI job submission command"""
+        args = self._cmd[:]
+
+        site = op.basename(dataset_url).lower()
+
+        jobname = "%s%s-%s" % (self.dataset, site, self.desc)
+        args.extend(['--job-name', jobname,
+                     '--job-queue', self.jobq,
+                     '--job-definition', self.jobdef,
+                     '--array-properties', 'size=%d' % len(array),
+                     '--container-overrides',
+                     'command=fetch-and-proc,%s,%s' % (dataset_url,
+                                                       ','.join(array))])
+        # if array is under the max job size, return args
+        return args if self._check_jobs(len(array)) else None
+
+
+    def run(self, dry=False):
+        """Submits Batch jobs through AWS CLI"""
+        msg = "Spawning %d job arrays" % self.njobs
+        if self.njobs == 1:
+            msg = msg[:-1]
+        elif self.njobs < 1:
+            return
+
+        for key, vals in self.items():
+            cmd = self._gen_subcmd(key, vals)
+            if not cmd:
+                break
+            out = self._run_cmd(cmd, dry)
+            print(out)
+            print('Queued so far:', self._queued)
+            # TODO: output log file to track processed sites
+
+    def _run_cmd(self, cmd):
+        """Actual subprocess call"""
+        if not cmd or not isinstance(cmd, list):
+            raise RuntimeError("Invalid command")
+        if dry:
+            return cmd
+        return sp.run(cmd, check=True, encoding='utf-8', stdout=sp.PIPE).stdout
+
+
+    def _check_jobs(self, jobs):
+        """If cap is set, do not queue more than cap"""
+        if self._queued + jobs > self.maxjobs:
+            return False
+        self._queued += jobs
+        return True

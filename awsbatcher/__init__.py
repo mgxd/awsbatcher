@@ -1,5 +1,7 @@
 import os
 
+__version__ = '0.0.1'
+
 DATALAD_ROOT = 'http://datasets-tests.datalad.org'
 
 PROJECTS_DIR = {
@@ -7,5 +9,3 @@ PROJECTS_DIR = {
     'abide2': 'RawData',
     'adhd200': 'RawDataBIDS',
 }
-
-batch_template = os.path.join(os.path.dirname(__file__), 'batch-skeleton.json')
