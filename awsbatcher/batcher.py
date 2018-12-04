@@ -17,7 +17,7 @@ class AWSBatcher(dict):
                  mem_mb=None,
                  envars=None,
                  timeout=86400,
-                 maxjobs=400,
+                 maxjobs=0,
                  **kwargs):
         """Dictionary class with AWS Batch CLI job submission capabilities"""
         super(AWSBatcher, self).__init__(**kwargs)
@@ -102,7 +102,10 @@ class AWSBatcher(dict):
 
     def _check_jobs(self, jobs):
         """If cap is set, do not queue more than cap"""
-        if self._queued + jobs > self.maxjobs:
+        if self.maxjobs < 1:
+            self._queued += jobs
+            return True
+        elif self._queued + jobs > self.maxjobs:
             return False
         self._queued += jobs
         return True
