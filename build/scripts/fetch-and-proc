@@ -117,6 +117,7 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
     CMD="${CMD} --fs_T2image ${T2PATH}"
   fi
 
+
   # check if subject ID is found in the S3 output
   # possible return codes:
   # 100 - mindboggle completed, skip entirely
