@@ -9,9 +9,9 @@ DATASET=$2
 
 # for use with c5.2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
-AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-20000}
+AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-14000}
 
-S3_CP_ARGS="--acl public-read"
+S3_SYNC_ARGS="--acl public-read"
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
   # job array
@@ -36,14 +36,7 @@ if [[ -z ${JOBTYPE} ]]; then
   echo "JOBTYPE not provided - supported args (fmriprep, mindboggle)"
 fi
 
-S3_OUTDIR="${S3_BUCKET}/derivatives/${JOBTYPE}"
-
-# first, check if subject has already been processed
-aws s3 ls ${S3_OUTDIR} | grep ${SUBJECT} &> /dev/null
-if [ $? == 0 ] && [[ -z ${S3_OVERWRITE} ]]; then
-  echo "${SUBJECT} has already been processed - set S3_OVERWRITE env to rerun"
-  exit 0
-fi
+S3_OUTDIR="${S3_BUCKET}/derivatives"
 
 ## BEGIN DATA FETCHING
 echo "Fetching data with datalad"
@@ -51,61 +44,66 @@ echo "Fetching data with datalad"
 # make data directory
 if [ -d data ]; then
   echo "Existing data directory found"
-  exit 0
-else
-  mkdir data
+  exit 1
 fi
-
-pushd data > /dev/null
 
 # first install the remote repository
-datalad install -r ${DATASET}
 DATASITE=$(basename ${DATASET})
+datalad install -r -s ${DATASET} data
 # now fetch only files necessary for single subject fmriprep
-datalad get -r -J ${AWSBATCH_CPUS} ./${DATASITE}/${SUBJECT}/{func,anat}/* ./${DATASITE}/${SUBJECT}/*/{func,anat}/* ./*/*.json || true
-# return to project root
-popd > /dev/null
+# do not need func if running mindboggle only...
+case "${JOBTYPE}" in
+  mindboggle)
+    datalad get -r -J ${AWSBATCH_CPUS} data/${SUBJECT}/anat/* data/${SUBJECT}/*/anat/* data/*.json || true
+    ;;
+  *)
+    datalad get -r -J ${AWSBATCH_CPUS} data/${SUBJECT}/{func,anat}/* data/${SUBJECT}/*/{func,anat}/* data/*.json || true
+    ;;
+esac
 
-# ensure derivatives exists
-if [ ! -d derivatives ]; then
-    mkdir derivatives
-fi
-
-# make working directory
-if [ ! -d scratch ]; then
-    mkdir scratch
-fi
-
+BIDSDIR="/working/data"
 OUTDIR="/working/derivatives"
 WORKDIR="/working/scratch"
 
-BIDSdir=$(ls $(pwd)/data/${DATASITE} -d)
+# ensure derivatives exists
+if [ ! -d ${OUTDIR} ]; then
+    mkdir -p ${OUTDIR}
+fi
+
+# make working directory
+if [ ! -d ${WORKDIR} ]; then
+    mkdir -p ${WORKDIR}
+fi
+
+exists_s3 ()
+{
+  aws s3 ls ${1} > /dev/null
+  if [ $? -eq 0 ]; then
+    return 0
+  fi
+  return 1
+}
 
 if [ "${JOBTYPE}" = "fmriprep" ]; then
 
   # preprocess data
-  CMD="fmriprep ${BIDSdir} derivatives participant \
+  CMD="fmriprep ${BIDSDIR} ${OUTDIR} participant \
       --participant_label ${SUBJECT} --cifti-output \
       --nthreads ${AWSBATCH_CPUS} --mem_mb ${AWSBATCH_MEM_MB} \
       --output-space template --template-resampling-grid 2mm \
-      --ignore slicetiming -w scratch \
+      --ignore slicetiming -w ${WORKDIR} \
       --fs-license-file /tmp/.fs_license.txt"
 
 elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
-  T1PATH=$(ls ${BIDSdir}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
-
+  T1PATH=$(ls ${BIDSDIR}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
   if [ ! -f ${T1PATH} ]; then
     echo "T1 not found for ${SUBJECT}"
     exit 1
   fi
 
-  FS_THREADS=$(expr ${AWSBATCH_CPUS} / 4)
-
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
-      --working ${WORKDIR} --plugin MultiProc --fs_openmp ${FS_THREADS} \
-      --ants_num_threads ${AWSBATCH_CPUS} --mb_num_threads ${AWSBATCH_CPUS} \
-      --ants_segN 20 --prov"
+      --working ${WORKDIR} --plugin MultiProc --prov --ants_segN 20"
 
   if [[ -n ${ANTS_SEG_FUSION} ]]; then
     CMD="${CMD} --ants_seg fusion"
@@ -119,33 +117,81 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
     CMD="${CMD} --fs_T2image ${T2PATH}"
   fi
 
+
+  # check if subject ID is found in the S3 output
+  # possible return codes:
+  # 100 - mindboggle completed, skip entirely
+  # 50 - freesurfer completed, skip recon-all
+  # 0 - no existing output found
+  previous_mb_run()
+  {
+    exists_s3 ${S3_OUTDIR}/mindboggle/mindboggled/${1}
+    if [ $? -eq 0 ]; then
+      return 100
+    fi
+    exists_s3 ${S3_OUTDIR}/mindboggle/freesurfer_subjects/${1}
+    if [ $? -eq 0 ]; then
+      return 50
+    fi
+    return 0
+  }
+
+  # dedicate 1 thread for FreeSurfer recon-all
+  ANTS_THREADS=$(expr ${AWSBATCH_CPUS} - 1)
+
+  # Avoid redundant running
+  previous_mb_run ${SUBJECT}
+  case $? in
+    100)
+      echo "Existing mindboggle run found, skipping"
+      CMD=":"
+      ;;
+    50)
+      echo "Existing FreeSurfer recon found, pulling..."
+      aws s3 cp ${S3_OUTDIR}/mindboggle/freesurfer_subjects/${SUBJECT} \
+                ${OUTDIR}/mindboggle/freesurfer_subjects/${SUBJECT} --recursive
+      CMD="${CMD} --skip_freesurfer --ants_num_threads ${AWSBATCH_CPUS} \
+          --mb_num_threads ${AWSBATCH_CPUS}"
+      ;;
+    0)
+      CMD="${CMD} --fs_openmp 1 --ants_num_threads ${ANTS_THREADS} \
+          --mb_num_threads ${ANTS_THREADS}"
+      ;;
+  esac
+
   # run mindboggle
   printf "Command:\n${CMD}\n\n"
   eval ${CMD}
 
-  # and queue up simple workflow as well
-  CMD="/working/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
-      -o ${OUTDIR}/simple_workflow -w ${WORKDIR}"
+  # push to S3 to allow clearing up space
+  aws s3 sync ${OUTDIR}/mindboggle ${S3_OUTDIR}/mindboggle ${S3_SYNC_ARGS} --exclude "fsaverage"
+  rm -rf ${OUTDIR}/mindboggle
+
+  # check if previous simple_workflow run exists
+  exists_s3 ${S3_OUTDIR}/simple_workflow/${SUBJECT}
+  if [ $? -eq 0 ]; then
+    echo "Exisiting simple workflow output found"
+    CMD=":"
+  else
+    # and queue up simple workflow as well
+    CMD="/working/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
+        -o ${OUTDIR}/simple_workflow -w ${WORKDIR}"
+  fi
 
 else  # other job types
   echo "${JOBTYPE} is not currently supported"
   exit 1
 fi
 
-
 printf "Command:\n${CMD}\n\n"
 eval ${CMD}
 
-# save outputs to S3 bucket (w/ freesurfer recons)
-aws s3 cp derivatives/ ${S3_BUCKET}/derivatives --recursive ${S3_CP_ARGS} --exclude "fsaverag*" # do not save any fsaverages along the way
+# save outputs to S3 bucket
+aws s3 sync ${OUTDIR}/simple_workflow ${S3_OUTDIR}/simple_workflow ${S3_SYNC_ARGS}
 
-if [ "${JOBTYPE}" = "mindboggle" ]; then
-  # save provenance files for mindboggle
-  aws s3 cp /working/scratch/Mindboggle123/workflow_provenance* ${S3_BUCKET}/derivatives/mindboggle/provenance/${SUBJECT}/ ${S3_CP_ARGS}
-  # and simple workflow
-  aws s3 cp /working/scratch/${SUBJECT}/workflow_provenance* ${S3_BUCKET}/simple_workflow/${SUBJECT}/ ${S3_CP_ARGS}
-fi
+# save any provenance files
+aws s3 cp ${WORKDIR}/workflow_provenance* ${S3_OUTDIR}/provenance/${SUBJECT}/ ${S3_SYNC_ARGS}
 
 # and any crashfiles along the way
-aws s3 cp scratch/ ${S3_BUCKET}/crashes --recursive --exclude "*" --include "crash*" ${S3_CP_ARGS}
+aws s3 cp scratch/ ${S3_BUCKET}/crashes --recursive --exclude "*" --include "crash*" ${S3_SYNC_ARGS}
 exit 0

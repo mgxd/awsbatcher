@@ -34,8 +34,8 @@ def get_parser():
     parser.add_argument('--desc', default='awsbatcher', help="Job description")
     parser.add_argument('--maxjobs',
                         type=int,
-                        default=400,
-                        help="Max number of queued jobs")
+                        default=0,
+                        help="Max number of queued jobs (No limit = set to 0)")
     parser.add_argument('--dry',
                         action='store_true',
                         default=False,
