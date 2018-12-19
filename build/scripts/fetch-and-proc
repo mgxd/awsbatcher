@@ -96,7 +96,7 @@ if [ "${JOBTYPE}" = "fmriprep" ]; then
 
 elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
-  T1PATH=$(ls ${BIDSDIR}/${SUBJECT}/anat/*_T1w.n* ${BIDSdir}/${SUBJECT}/*/anat/*_T1w.n*)
+  T1PATH=$(ls ${BIDSDIR}/${SUBJECT}/anat/*_T1w.n* ${BIDSDIR}/${SUBJECT}/*/anat/*_T1w.n*)
   if [ ! -f ${T1PATH} ]; then
     echo "T1 not found for ${SUBJECT}"
     exit 1
@@ -189,8 +189,8 @@ eval ${CMD}
 aws s3 sync ${OUTDIR}/simple_workflow ${S3_OUTDIR}/simple_workflow ${S3_SYNC_ARGS}
 
 # save any provenance files
-aws s3 cp ${WORKDIR}/workflow_provenance* ${S3_OUTDIR}/provenance/${SUBJECT}/ ${S3_SYNC_ARGS}
+aws s3 cp ${WORKDIR}/ ${S3_OUTDIR}/provenance/${SUBJECT}/ --recursive --exclude "*" --include "workflow_provenance*" ${S3_SYNC_ARGS}
 
 # and any crashfiles along the way
-aws s3 cp scratch/ ${S3_BUCKET}/crashes --recursive --exclude "*" --include "crash*" ${S3_SYNC_ARGS}
+aws s3 cp scratch/ ${S3_BUCKET}/crashes/${SUBJECT}/ --recursive --exclude "*" --include "crash*" ${S3_SYNC_ARGS}
 exit 0
