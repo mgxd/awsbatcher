@@ -17,8 +17,9 @@ def get_parser():
     parser.add_argument('--version', action='version', version=__version__)
     # Mandatory arguments
     parser.add_argument('project',
-                        choices=PROJECTS_DIR.keys(),
-                        help="Datalad project name")
+                        help="Datalad project name. Supported projects include "
+                        "{}, and openneuro:<project>".format(
+                            ", ".join(PROJECTS_DIR.keys())))
     parser.add_argument('job_queue', help="AWS Batch job queue")
     parser.add_argument('job_def', help="AWS Batch job definition")
     # Optional job definition overwrites
@@ -45,9 +46,20 @@ def get_parser():
 def main(argv=None):
     parser = get_parser()
     args = parser.parse_args(argv)
+
+    if args.project.startswith('openneuro') and ':' in args.project:
+        args.project, secondarydir = args.project.split(':', 1)
+        openneuro = True
+    else:
+        try:
+            secondarydir = PROJECTS_DIR[args.project]
+            openneuro = False
+        except:
+            raise KeyError("Project", args.project, "not found")
+
     project_url = "%s/%s/%s" % (DATALAD_ROOT,
                                 args.project,
-                                PROJECTS_DIR[args.project])
+                                secondarydir)
     batcher = AWSBatcher(desc=args.desc,
                          dataset=args.project,
                          jobq=args.job_queue,
@@ -58,7 +70,7 @@ def main(argv=None):
                          timeout=args.timeout,
                          maxjobs=args.maxjobs)
     # crawl and aggregate subjects to run
-    batcher = fetch_data(project_url, batcher)
+    batcher = fetch_data(project_url, batcher, openneuro)
     batcher.run(dry=args.dry)
 
 if __name__ == '__main__':
