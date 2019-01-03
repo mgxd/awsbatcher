@@ -96,11 +96,14 @@ if [ "${JOBTYPE}" = "fmriprep" ]; then
 
 elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
-  T1PATH=$(ls ${BIDSDIR}/${SUBJECT}/anat/*_T1w.n* ${BIDSDIR}/${SUBJECT}/*/anat/*_T1w.n*)
-  if [ ! -f ${T1PATH} ]; then
-    echo "T1 not found for ${SUBJECT}"
-    exit 1
+  T1PATH($(find ${BIDSDIR} -name "${SUBJECT}*_T1w.n*"))
+  if [ ${#T1PATH} -ne 1 ]; then
+    echo "Multiple T1w images found for ${SUBJECT}"
+    T1PATH=${T1PATH[0]}
+    echo "Using T1w image: ${T1PATH}"
   fi
+
+  [ -f "${T1PATH}" ] || {echo "T1 not found for ${SUBJECT}"; exit 1;}
 
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
       --working ${WORKDIR} --plugin MultiProc --prov --ants_segN 20"
@@ -113,9 +116,8 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
   # Use T2 if possible
   T2PATH=${T1PATH/_T1w./_T2w.}
-  if [ -f ${T2PATH} ]; then
-    CMD="${CMD} --fs_T2image ${T2PATH}"
-  fi
+  [ ! -f ${T2PATH} ] || CMD="${CMD} --fs_T2image ${T2PATH}"
+
 
 
   # check if subject ID is found in the S3 output
