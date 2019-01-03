@@ -21,9 +21,9 @@ def fetch_subjects(site_url):
     return [s.string[:-1] for s in soup.find_all("a") if s.string.startswith('sub')]
 
 
-def fetch_data(project_url, batcher):
+def fetch_data(project_url, batcher, openneuro=False):
     """
-    Crawls target dataset on Datalad's website.
+    Crawls target dataset on DataLad's server.
 
     Parameters
     ----------
@@ -39,14 +39,17 @@ def fetch_data(project_url, batcher):
         - site location keys
         - list of subjects values
     """
-    res = requests.get(project_url)
-    soup = BeautifulSoup(res.content, 'lxml')
-    samples = soup.find_all("a")
+    if openneuro:
+        batcher[project_url] = fetch_subjects(project_url)
+    else:
+        res = requests.get(project_url)
+        soup = BeautifulSoup(res.content, 'lxml')
+        samples = soup.find_all("a")
 
-    for a in samples:
-        title = a.string.strip()
-        if title[-1].endswith('/'):
-            site = title[:-1]
-            site_url = op.join(project_url, site)
-            batcher[site_url] = fetch_subjects(site_url)
+        for a in samples:
+            title = a.string.strip()
+            if title[-1].endswith('/'):
+                site = title[:-1]
+                site_url = project_url + '/' + site
+                batcher[site_url] = fetch_subjects(site_url)
     return batcher
