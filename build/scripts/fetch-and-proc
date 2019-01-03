@@ -161,6 +161,48 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
       ;;
   esac
 
+
+  # check if subject ID is found in the S3 output
+  # possible return codes:
+  # 100 - mindboggle completed, skip entirely
+  # 50 - freesurfer completed, skip recon-all
+  # 0 - no existing output found
+  previous_mb_run()
+  {
+    exists_s3 ${S3_OUTDIR}/mindboggle/mindboggled/${1}
+    if [ $? -eq 0 ]; then
+      return 100
+    fi
+    exists_s3 ${S3_OUTDIR}/mindboggle/freesurfer_subjects/${1}
+    if [ $? -eq 0 ]; then
+      return 50
+    fi
+    return 0
+  }
+
+  # dedicate 1 thread for FreeSurfer recon-all
+  ANTS_THREADS=$(expr ${AWSBATCH_CPUS} - 1)
+
+  # Avoid redundant running
+  previous_mb_run ${SUBJECT}
+  case $? in
+    100)
+      echo "Existing mindboggle run found, skipping"
+      CMD=":"
+      ;;
+    50)
+      echo "Existing FreeSurfer recon found, pulling..."
+      aws s3 cp ${S3_OUTDIR}/mindboggle/freesurfer_subjects/${SUBJECT} \
+                ${OUTDIR}/mindboggle/freesurfer_subjects/${SUBJECT} --recursive
+      CMD="${CMD} --skip_freesurfer --ants_num_threads ${AWSBATCH_CPUS} \
+          --mb_num_threads ${AWSBATCH_CPUS}"
+      ;;
+    0)
+      CMD="${CMD} --fs_openmp 1 --ants_num_threads ${ANTS_THREADS} \
+          --mb_num_threads ${ANTS_THREADS}"
+      ;;
+  esac
+
   # run mindboggle
   printf "Command:\n${CMD}\n\n"
   eval ${CMD}
