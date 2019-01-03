@@ -96,14 +96,14 @@ if [ "${JOBTYPE}" = "fmriprep" ]; then
 
 elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
-  T1PATH($(find ${BIDSDIR} -name "${SUBJECT}*_T1w.n*"))
+  T1PATH=($(find ${BIDSDIR} -name "${SUBJECT}*_T1w.n*"))
   if [ ${#T1PATH} -ne 1 ]; then
     echo "Multiple T1w images found for ${SUBJECT}"
     T1PATH=${T1PATH[0]}
     echo "Using T1w image: ${T1PATH}"
   fi
 
-  [ -f "${T1PATH}" ] || {echo "T1 not found for ${SUBJECT}"; exit 1;}
+  [ -f "${T1PATH}" ] || { echo "T1 not found for ${SUBJECT}"; exit 1; }
 
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
       --working ${WORKDIR} --plugin MultiProc --prov --ants_segN 20"
