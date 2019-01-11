@@ -45,8 +45,10 @@ class AWSBatcher(dict):
     def _gen_subcmd(self, dataset_url, array):
         """Generate an AWS CLI job submission command"""
         args = self._cmd[:]
-
         site = op.basename(dataset_url).lower()
+        if len(array) < 1:
+            print("No jobs found for", site)
+            return
 
         jobname = "%s%s-%s" % (self.dataset, site, self.desc)
         args.extend(['--job-name', jobname,
@@ -85,7 +87,7 @@ class AWSBatcher(dict):
         for key, vals in self.items():
             cmd = self._gen_subcmd(key, vals)
             if not cmd:
-                break
+                continue
             out = self._run_cmd(cmd, dry=dry)
             print('Queued so far:', self._queued)
             # TODO: output log file to track processed sites
