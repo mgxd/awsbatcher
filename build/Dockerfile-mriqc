@@ -1,33 +1,19 @@
-FROM poldracklab/mriqc:latest
+FROM poldracklab/mriqc:0.14.2
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends groff \
                                                less \
                                                unzip \
+                                               netbase \
                                                git-annex-standalone
 
-# upgrade npm
-WORKDIR /tmp
-RUN npm update \
-    && npm cache clean \
-    && npm install -g n npm@latest \
-    && n stable
-
-# install openneuro's CLI
-RUN npm install -g openneuro-cli superagent \
-    && rm -rf /tmp/npm*
-
-# set up credentials
-RUN echo "eyJ1cmwiOiJodHRwczovL29wZW5uZXVyby5vcmcvIiwiYXBpa2V5IjoiZXlKaGJHY2lPaUpJVXpJ\
-MU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnpkV0lpT2lKa05XRXlOVEUzWVMxbU1EYzBMVFF5TXpR\
-dFltTTVZUzB5TldVMU5UYzBPRFl6WkRFaUxDSmxiV0ZwYkNJNkltZHZibU5oYkhabGN5NXRZWFJv\
-YVdGelFHZHRZV2xzTG1OdmJTSXNJbkJ5YjNacFpHVnlJam9pWjI5dloyeGxJaXdpYm1GdFpTSTZJ\
-azFoZEdocFlYTWdSMjl1WTJGc2RtVnpJaXdpWVdSdGFXNGlPbVpoYkhObExDSnBZWFFpT2pFMU5E\
-VTVORFV5TXpFc0ltVjRjQ0k2TVRVM056UTRNVEl6TVgwLjRMdkNqNHpyTUo1cEhVSm50X3c5bGJ0\
-U0xHTUVxbHBhdUVxbkNtUE5NT0EifQo=" | base64 -d > ${HOME}/.openneuro
+# aws cli
+RUN pip install --no-cache-dir -U awscli datalad[all]
 
 # add AWS handshake script to container
 COPY scripts/batch_runner.sh /
 RUN chmod +x /batch_runner.sh
 
-ENTRYPOINT /batch_runner.sh
+WORKDIR /working
+
+ENTRYPOINT ["/batch_runner.sh"]

@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # install a datalad data repository specific to one subject
-# run neuroimaging analysis pipeline (fmriprep/mindboggle)
+# run neuroimaging analysis pipeline (fmriprep/mindboggle/mriqc)
 
 # push results to S3 bucket
 
 DATASET=$2
 
-# for use with c5.2XL instance type
+# for use with c4/5 2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
 AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-14000}
 S3_FS_DIR=${S3_FS_DIR:-""}
@@ -35,7 +35,7 @@ if [[ -z ${S3_BUCKET} ]]; then
 fi
 
 if [[ -z ${JOBTYPE} ]]; then
-  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle)"
+  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc)"
 fi
 
 S3_OUTDIR="${S3_BUCKET}/derivatives"
@@ -84,7 +84,17 @@ exists_s3 ()
   return $?
 }
 
-if [ "${JOBTYPE}" = "fmriprep" ]; then
+if [ "${JOBTYPE}" = "mriqc" ]; then
+  AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1000)
+  CMD="mriqc ${BIDSDIR} ${OUTDIR}/mriqc participant \
+      --participant_label ${SUBJECT:4} --n_procs ${AWSBATCH_CPUS} \
+      --mem_gb ${AWSBATCH_MEM_GB} -w ${WORKDIR} --verbose-reports"
+
+  if exists_s3 ${S3_OUTDIR}/mriqc/${SUBJECT}; then
+    CMD=":"
+  fi
+
+elif [ "${JOBTYPE}" = "fmriprep" ]; then
 
   CMD="fmriprep ${BIDSDIR} ${OUTDIR} participant --cifti-output \
       --participant_label ${SUBJECT:4} --nthreads ${AWSBATCH_CPUS} \
@@ -223,6 +233,9 @@ if [ ${PUSH_FS_RESULTS} -eq 0 ]; then
 else
   aws s3 sync ${OUTDIR}/fmriprep/ ${S3_OUTDIR}/fmriprep/ ${S3_SYNC_ARGS}
 fi
+
+# save any mriqc outputs
+aws s3 sync ${OUTDIR}/mriqc/ ${S3_OUTDIR}/mriqc/ ${S3_SYNC_ARGS}
 
 # or simple workflow outputs
 aws s3 sync ${OUTDIR}/simple_workflow ${S3_OUTDIR}/simple_workflow ${S3_SYNC_ARGS}
