@@ -1,24 +1,18 @@
-# - download abide (datalad)
-# - process (fmriprep)
+FROM poldracklab/mriqc:0.14.2
 
-FROM poldracklab/fmriprep:1.2.5
-
-# install datalad + aws reqs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends groff \
                                                less \
-                                               netbase \
                                                unzip \
+                                               netbase \
                                                git-annex-standalone
+
 # aws cli
-RUN pip install --no-cache-dir -U awscli pip
+RUN pip install --no-cache-dir -U awscli datalad[all]
 
 # add AWS handshake script to container
 COPY scripts/batch_runner.sh /
 RUN chmod +x /batch_runner.sh
-
-# license file
-RUN echo "cHJpbnRmICJtYXRoaWFzZ0BtaXQuZWR1XG4yNzI1N1xuICpDWG5wZVB3Y2ZLYllcbkZTY3pvTFJBZG9pOHMiID4gL3RtcC8uZnNfbGljZW5zZS50eHQK" | base64 -d | sh
 
 WORKDIR /working
 

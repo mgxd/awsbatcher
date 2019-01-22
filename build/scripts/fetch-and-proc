@@ -1,15 +1,17 @@
 #!/bin/bash
 
 # install a datalad data repository specific to one subject
-# run neuroimaging analysis pipeline (fmriprep/mindboggle)
+# run neuroimaging analysis pipeline (fmriprep/mindboggle/mriqc)
 
 # push results to S3 bucket
 
 DATASET=$2
 
-# for use with c5.2XL instance type
+# for use with c4/5 2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
 AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-14000}
+S3_FS_DIR=${S3_FS_DIR:-""}
+PUSH_FS_RESULTS=0
 
 S3_SYNC_ARGS="--acl public-read"
 
@@ -33,37 +35,21 @@ if [[ -z ${S3_BUCKET} ]]; then
 fi
 
 if [[ -z ${JOBTYPE} ]]; then
-  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle)"
+  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc)"
 fi
 
 S3_OUTDIR="${S3_BUCKET}/derivatives"
+BIDSDIR="/working/data"
+OUTDIR="/working/derivatives"
+WORKDIR="/working/scratch"
 
 ## BEGIN DATA FETCHING
 echo "Fetching data with datalad"
 
 # make data directory
-if [ -d data ]; then
-  echo "Existing data directory found"
-  exit 1
+if [ ! -d ${BIDSDIR} ]; then
+  mkdir -p ${BIDSDIR}
 fi
-
-# first install the remote repository
-DATASITE=$(basename ${DATASET})
-datalad install -r -s ${DATASET} data
-# now fetch only files necessary for single subject fmriprep
-# do not need func if running mindboggle only...
-case "${JOBTYPE}" in
-  mindboggle)
-    datalad get -r -J ${AWSBATCH_CPUS} data/${SUBJECT}/anat/* data/${SUBJECT}/*/anat/* data/*.json || true
-    ;;
-  *)
-    datalad get -r -J ${AWSBATCH_CPUS} data/${SUBJECT}/{func,anat}/* data/${SUBJECT}/*/{func,anat}/* data/*.json || true
-    ;;
-esac
-
-BIDSDIR="/working/data"
-OUTDIR="/working/derivatives"
-WORKDIR="/working/scratch"
 
 # ensure derivatives exists
 if [ ! -d ${OUTDIR} ]; then
@@ -75,29 +61,60 @@ if [ ! -d ${WORKDIR} ]; then
     mkdir -p ${WORKDIR}
 fi
 
+# first install the remote repository
+datalad install -r -s ${DATASET} ${BIDSDIR}
+# now fetch only files necessary for single subject fmriprep
+# do not need func if running mindboggle only...
+case "${JOBTYPE}" in
+  mindboggle)
+    datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* data/*.json || true
+    ;;
+  *)
+    datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* data/*.json || true
+    ;;
+esac
+
+BIDSDIR="/working/data"
+OUTDIR="/working/derivatives"
+WORKDIR="/working/scratch"
+
 exists_s3 ()
 {
   aws s3 ls ${1} > /dev/null
-  if [ $? -eq 0 ]; then
-    return 0
-  fi
-  return 1
+  return $?
 }
 
-if [ "${JOBTYPE}" = "fmriprep" ]; then
+if [ "${JOBTYPE}" = "mriqc" ]; then
+  AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1000)
+  CMD="mriqc ${BIDSDIR} ${OUTDIR}/mriqc participant \
+      --participant_label ${SUBJECT:4} --n_procs ${AWSBATCH_CPUS} \
+      --mem_gb ${AWSBATCH_MEM_GB} -w ${WORKDIR} --verbose-reports"
 
-  # preprocess data
-  CMD="fmriprep ${BIDSDIR} ${OUTDIR} participant \
-      --participant_label ${SUBJECT} --cifti-output \
-      --nthreads ${AWSBATCH_CPUS} --mem_mb ${AWSBATCH_MEM_MB} \
-      --output-space template --template-resampling-grid 2mm \
-      --ignore slicetiming -w ${WORKDIR} \
-      --fs-license-file /tmp/.fs_license.txt"
+  if exists_s3 ${S3_OUTDIR}/mriqc/${SUBJECT}; then
+    CMD=":"
+  fi
+
+elif [ "${JOBTYPE}" = "fmriprep" ]; then
+
+  CMD="fmriprep ${BIDSDIR} ${OUTDIR} participant --cifti-output \
+      --participant_label ${SUBJECT:4} --nthreads ${AWSBATCH_CPUS} \
+      --mem_mb ${AWSBATCH_MEM_MB} --output-space template fsaverage5 \
+      --template-resampling-grid 2mm --ignore slicetiming -w ${WORKDIR} \
+      --use-aroma --omp-nthreads 1 --ignore-aroma-denoising-errors \
+      --skip_bids_validation --fs-license-file /tmp/.fs_license.txt"
+
+  # check if already run
+  if exists_s3 ${S3_OUTDIR}/fmriprep/${SUBJECT}; then
+    CMD=":"
+  elif [[ -n ${S3_FS_DIR} ]]; then
+    aws s3 cp ${S3_FS_DIR}/${SUBJECT}/ ${OUTDIR}/freesurfer/${SUBJECT} --recursive
+    PUSH_FS_RESULTS=1
+  fi
 
 elif [ "${JOBTYPE}" = "mindboggle" ]; then
 
   T1PATH=($(find ${BIDSDIR} -name "${SUBJECT}*_T1w.n*"))
-  if [ ${#T1PATH} -ne 1 ]; then
+  if [ ${#T1PATH} -gt 1 ]; then
     echo "Multiple T1w images found for ${SUBJECT}"
     T1PATH=${T1PATH[0]}
     echo "Using T1w image: ${T1PATH}"
@@ -117,7 +134,6 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
   # Use T2 if possible
   T2PATH=${T1PATH/_T1w./_T2w.}
   [ ! -f ${T2PATH} ] || CMD="${CMD} --fs_T2image ${T2PATH}"
-
 
 
   # check if subject ID is found in the S3 output
@@ -160,25 +176,6 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
           --mb_num_threads ${ANTS_THREADS}"
       ;;
   esac
-
-
-  # check if subject ID is found in the S3 output
-  # possible return codes:
-  # 100 - mindboggle completed, skip entirely
-  # 50 - freesurfer completed, skip recon-all
-  # 0 - no existing output found
-  previous_mb_run()
-  {
-    exists_s3 ${S3_OUTDIR}/mindboggle/mindboggled/${1}
-    if [ $? -eq 0 ]; then
-      return 100
-    fi
-    exists_s3 ${S3_OUTDIR}/mindboggle/freesurfer_subjects/${1}
-    if [ $? -eq 0 ]; then
-      return 50
-    fi
-    return 0
-  }
 
   # dedicate 1 thread for FreeSurfer recon-all
   ANTS_THREADS=$(expr ${AWSBATCH_CPUS} - 1)
@@ -230,12 +227,22 @@ fi
 printf "Command:\n${CMD}\n\n"
 eval ${CMD}
 
-# save outputs to S3 bucket
+# only push FS if not found previously
+if [ ${PUSH_FS_RESULTS} -eq 0 ]; then
+  aws s3 sync ${OUTDIR}/ ${S3_OUTDIR}/ ${S3_SYNC_ARGS}
+else
+  aws s3 sync ${OUTDIR}/fmriprep/ ${S3_OUTDIR}/fmriprep/ ${S3_SYNC_ARGS}
+fi
+
+# save any mriqc outputs
+aws s3 sync ${OUTDIR}/mriqc/ ${S3_OUTDIR}/mriqc/ ${S3_SYNC_ARGS}
+
+# or simple workflow outputs
 aws s3 sync ${OUTDIR}/simple_workflow ${S3_OUTDIR}/simple_workflow ${S3_SYNC_ARGS}
 
 # save any provenance files
 aws s3 cp ${WORKDIR}/ ${S3_OUTDIR}/provenance/${SUBJECT}/ --recursive --exclude "*" --include "workflow_provenance*" ${S3_SYNC_ARGS}
 
 # and any crashfiles along the way
-aws s3 cp scratch/ ${S3_BUCKET}/crashes/${SUBJECT}/ --recursive --exclude "*" --include "crash*" ${S3_SYNC_ARGS}
+aws s3 cp ${WORKDIR}/ ${S3_BUCKET}/crashes/${SUBJECT}/ --recursive --exclude "*" --include "crash*" ${S3_SYNC_ARGS}
 exit 0
