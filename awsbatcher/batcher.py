@@ -53,8 +53,10 @@ class AWSBatcher(dict):
         jobname = "%s%s-%s" % (self.dataset, site, self.desc)
         args.extend(['--job-name', jobname,
                      '--job-queue', self.jobq,
-                     '--job-definition', self.jobdef,
-                     '--array-properties', 'size=%d' % len(array)])
+                     '--job-definition', self.jobdef])
+
+        if len(array) > 1:
+            args.extend(['--array-properties', 'size=%d' % len(array)])
 
         overrides = []
         if self.vcpus:
