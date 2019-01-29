@@ -7,5 +7,6 @@ PROJECTS_DIR = {
     'abide': 'RawDataBIDS',
     'abide2': 'RawData',
     'adhd200': 'RawDataBIDS',
-    'corr': 'RawDataBIDS'
+    'corr': 'RawDataBIDS',
+    'openneuro': '',  # multiple datasets
 }

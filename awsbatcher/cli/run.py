@@ -49,13 +49,9 @@ def main(argv=None):
 
     single_site = False
     # allow single site submission or entire dataset
-    if args.project.startswith('openneuro'):
-        if ':' in args.project:
+    if ':' in args.project:
             args.project, secondarydir = args.project.split(':', 1)
             single_site = True
-        else:
-            secondarydir = ""
-
     else:
         try:
             secondarydir = PROJECTS_DIR[args.project]
