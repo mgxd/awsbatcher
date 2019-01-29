@@ -47,19 +47,23 @@ def main(argv=None):
     parser = get_parser()
     args = parser.parse_args(argv)
 
-    if args.project.startswith('openneuro') and ':' in args.project:
-        args.project, secondarydir = args.project.split(':', 1)
-        openneuro = True
+    single_site = False
+    # allow single site submission or entire dataset
+    if args.project.startswith('openneuro'):
+        if ':' in args.project:
+            args.project, secondarydir = args.project.split(':', 1)
+            single_site = True
+        else:
+            secondarydir = ""
+
     else:
         try:
             secondarydir = PROJECTS_DIR[args.project]
-            openneuro = False
         except:
             raise KeyError("Project", args.project, "not found")
 
-    project_url = "%s/%s/%s" % (DATALAD_ROOT,
-                                args.project,
-                                secondarydir)
+    project_url = '/'.join([DATALAD_ROOT, args.project, secondarydir])
+
     batcher = AWSBatcher(desc=args.desc,
                          dataset=args.project,
                          jobq=args.job_queue,
@@ -70,7 +74,7 @@ def main(argv=None):
                          timeout=args.timeout,
                          maxjobs=args.maxjobs)
     # crawl and aggregate subjects to run
-    batcher = fetch_data(project_url, batcher, openneuro)
+    batcher = fetch_data(project_url, batcher, single_site)
     batcher.run(dry=args.dry)
 
 if __name__ == '__main__':

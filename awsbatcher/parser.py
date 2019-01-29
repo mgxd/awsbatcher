@@ -21,7 +21,7 @@ def fetch_subjects(site_url):
     return [s.string[:-1] for s in soup.find_all("a") if s.string.startswith('sub')]
 
 
-def fetch_data(project_url, batcher, openneuro=False):
+def fetch_data(project_url, batcher, single_site=False):
     """
     Crawls target dataset on DataLad's server.
 
@@ -31,6 +31,8 @@ def fetch_data(project_url, batcher, openneuro=False):
         URL to DataLad project
     batcher : object
         Initialized AWSBatcher object
+    single_site : boolean, optional
+        Only submit single site
 
     Returns
     -------
@@ -39,7 +41,7 @@ def fetch_data(project_url, batcher, openneuro=False):
         - site location keys
         - list of subjects values
     """
-    if openneuro:
+    if single_site:
         batcher[project_url] = fetch_subjects(project_url)
     else:
         res = requests.get(project_url)
