@@ -38,13 +38,17 @@ if [[ -z ${JOBTYPE} ]]; then
   echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc)"
 fi
 
-S3_OUTDIR="${S3_BUCKET}/derivatives"
+# account for openneuro datasets
+SITE=$(basename ${DATASET})
+if [[ ${SITE} = ds* ]]; then
+  S3_OUTDIR="${S3_BUCKET}/${SITE}/derivatives"
+else
+  S3_OUTDIR="${S3_BUCKET}/derivatives"
+fi
+
 BIDSDIR="/working/data"
 OUTDIR="/working/derivatives"
 WORKDIR="/working/scratch"
-
-## BEGIN DATA FETCHING
-echo "Fetching data with datalad"
 
 # make data directory
 if [ ! -d ${BIDSDIR} ]; then
@@ -61,6 +65,9 @@ if [ ! -d ${WORKDIR} ]; then
     mkdir -p ${WORKDIR}
 fi
 
+## BEGIN DATA FETCHING
+echo "Fetching data with datalad"
+
 # first install the remote repository
 datalad install -r -s ${DATASET} ${BIDSDIR}
 # now fetch only files necessary for single subject fmriprep
@@ -74,10 +81,6 @@ case "${JOBTYPE}" in
     ;;
 esac
 
-BIDSDIR="/working/data"
-OUTDIR="/working/derivatives"
-WORKDIR="/working/scratch"
-
 exists_s3 ()
 {
   aws s3 ls ${1} > /dev/null
@@ -88,11 +91,12 @@ if [ "${JOBTYPE}" = "mriqc" ]; then
   AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1000)
   CMD="mriqc ${BIDSDIR} ${OUTDIR}/mriqc participant \
       --participant_label ${SUBJECT:4} --n_procs ${AWSBATCH_CPUS} \
-      --mem_gb ${AWSBATCH_MEM_GB} -w ${WORKDIR} --verbose-reports"
+      --mem_gb ${AWSBATCH_MEM_GB} -w ${WORKDIR} --verbose-reports --ica"
 
-  if exists_s3 ${S3_OUTDIR}/mriqc/${SUBJECT}; then
-    CMD=":"
-  fi
+  # rerun with ica
+  # if exists_s3 ${S3_OUTDIR}/mriqc/${SUBJECT}; then
+  #   CMD=":"
+  # fi
 
 elif [ "${JOBTYPE}" = "fmriprep" ]; then
 
