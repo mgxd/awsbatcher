@@ -64,8 +64,8 @@ class AWSBatcher(dict):
         if self.mem_mb:
             overrides.append('memory=%d' % self.mem_mb)
         # overwrite command
-        overrides.append('command=fetch-and-proc,%s,%s' % (dataset_url,
-                                                           ','.join(array)))
+        overrides.append('command=%s,%s' % (dataset_url,
+                                            ','.join(array)))
         if self.envars:
             overrides.append('environment=[%s]' % (
                 ','.join(['{name=%s,value=%s}' % (k,v) for

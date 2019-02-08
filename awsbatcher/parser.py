@@ -21,7 +21,7 @@ def fetch_subjects(site_url):
     return [s.string[:-1] for s in soup.find_all("a") if s.string.startswith('sub')]
 
 
-def fetch_data(project_url, batcher, single_site=False):
+def fetch_datalad_data(project_url, batcher, single_site=False):
     """
     Crawls target dataset on DataLad's server.
 

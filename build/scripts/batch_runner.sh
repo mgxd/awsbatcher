@@ -12,7 +12,7 @@ if [[ -n "${S3_FILE_URL}" ]]; then
   # AWS will handle credentials
   aws s3 cp "${S3_FILE_URL}" "/usr/bin/${BATCH_FILE}"
   chmod +x "/usr/bin/${BATCH_FILE}"
-  exec "${BATCH_FILE}" "${@}"
+  exec "${BATCH_FILE} ${@}"
 else
   echo 'Environ S3_FILE_URL is not defined'
   exit 1

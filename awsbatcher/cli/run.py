@@ -3,7 +3,7 @@
 from argparse import ArgumentParser, Action
 
 from awsbatcher import DATALAD_ROOT, PROJECTS_DIR, __version__
-from awsbatcher.parser import fetch_data
+from awsbatcher.parser import fetch_datalad_data
 from awsbatcher.batcher import AWSBatcher
 
 class Str2DictAction(Action):
@@ -46,31 +46,39 @@ def get_parser():
 def main(argv=None):
     parser = get_parser()
     args = parser.parse_args(argv)
-
-    single_site = False
     # allow single site submission or entire dataset
-    if ':' in args.project:
-            args.project, secondarydir = args.project.split(':', 1)
-            single_site = True
+    single_site = False
+
+    # allow pulling from S3
+    if args.project.startswith('s3://'):
+        # aws api - BOTO?
+        pass
+
     else:
-        try:
-            secondarydir = PROJECTS_DIR[args.project]
-        except:
-            raise KeyError("Project", args.project, "not found")
+        if ':' in args.project:
+                args.project, secondarydir = args.project.split(':', 1)
+                single_site = True
+        else:
+            try:
+                secondarydir = PROJECTS_DIR[args.project]
+            except:
+                raise KeyError("Project", args.project, "not found")
 
-    project_url = '/'.join([DATALAD_ROOT, args.project, secondarydir])
+        project_url = '/'.join([DATALAD_ROOT, args.project, secondarydir])
 
-    batcher = AWSBatcher(desc=args.desc,
-                         dataset=args.project,
-                         jobq=args.job_queue,
-                         jobdef=args.job_def,
-                         vcpus=args.vcpus,
-                         mem_mb=args.mem_mb,
-                         envars=args.envars,
-                         timeout=args.timeout,
-                         maxjobs=args.maxjobs)
-    # crawl and aggregate subjects to run
-    batcher = fetch_data(project_url, batcher, single_site)
+        batcher = AWSBatcher(desc=args.desc,
+                             dataset=args.project,
+                             jobq=args.job_queue,
+                             jobdef=args.job_def,
+                             vcpus=args.vcpus,
+                             mem_mb=args.mem_mb,
+                             envars=args.envars,
+                             timeout=args.timeout,
+                             maxjobs=args.maxjobs)
+        # crawl and aggregate subjects to run
+        batcher = fetch_datalad_data(project_url, batcher, single_site)
+
+    # run the batcher
     batcher.run(dry=args.dry)
 
 if __name__ == '__main__':

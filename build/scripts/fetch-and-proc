@@ -5,7 +5,7 @@
 
 # push results to S3 bucket
 
-DATASET=$2
+DATASET=$1
 
 # for use with c4/5 2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
@@ -17,11 +17,11 @@ S3_SYNC_ARGS="--acl public-read"
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
   # job array
-  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 3)
+  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 2)
   SUBJECT=${!subjidx}
 else
   # single job
-  SUBJECT=$3
+  SUBJECT=$2
 fi
 
 if [[ -z ${DATASET} ]] || [[ -z ${SUBJECT} ]]; then
@@ -35,7 +35,7 @@ if [[ -z ${S3_BUCKET} ]]; then
 fi
 
 if [[ -z ${JOBTYPE} ]]; then
-  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc)"
+  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc, DenoiseImage)"
 fi
 
 # account for openneuro datasets
@@ -87,7 +87,59 @@ exists_s3 ()
   return $?
 }
 
-if [ "${JOBTYPE}" = "mriqc" ]; then
+if [ "${JOBTYPE}" = "DenoiseImage" ]; then
+  pushd ${BIDSDIR} > /dev/null
+
+  # use same path for the
+  for FL in $(find ${SUBJECT} -name "*.ni*"); do
+	  BASEPATH=$(dirname ${FL})
+	  BASENAME=$(basename ${FL})
+	  OUTNAME=${BASENAME/.nii/_denoised.nii}
+
+    SOUTDIR="${OUTDIR}/denoise/${BASEPATH}"
+    if [ ! -d ${SOUTDIR} ]; the
+      mkdir -p ${SOUTDIR}
+    fi
+    OUTNAME="${SOUTDIR}/${OUTNAME}"
+
+	  if [[ ${FL} == *"_bold"* ]] || [[ ${FL} == *"_dwi"* ]]; then
+		  # first split into 4D files
+		  CMD="fslsplit ${FL}"
+		  echo "Splitting 4D image into 3D volumes ${CMD}"
+		  eval ${CMD}
+		  # run DenoiseImage for each volume
+		  CVOL=()
+		  for vol in $(find . -name "vol*" | sort); do
+			  ovol=${vol/vol/cvol}
+			  CMD="DenoiseImage -d 3 -i ${vol} -o ${ovol} -v"
+			  echo ${CMD}
+			  eval ${CMD}
+			  CVOL+=(${ovol})
+			  # and remove volume to save space
+			  rm ${vol}
+		  done
+		  # merge the images
+		  CMD="fslmerge -t ${OUTNAME} ${CVOL[@]}"
+		  echo "Combining denoised 3D images ${CMD}"
+		  eval ${CMD}
+		  # and remove corrected volumes to save space
+		  for cvol in ${CVOL[@]}; do
+			  rm ${cvol}
+		  done
+      echo ""
+      CMD=":"
+	  else
+		  echo "Denoising 3D image ${FL}"
+		  CMD="DenoiseImage -d 3 -i ${FL} -o ${OUTNAME} -v"
+		  eval ${CMD}
+      echo ""
+      CMD=":"
+	  fi
+	  # remove file
+	  rm ${FL}
+  done
+  popd > /dev/null
+elif [ "${JOBTYPE}" = "mriqc" ]; then
   AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1000)
   CMD="mriqc ${BIDSDIR} ${OUTDIR}/mriqc participant \
       --participant_label ${SUBJECT:4} --n_procs ${AWSBATCH_CPUS} \
