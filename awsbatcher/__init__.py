@@ -8,5 +8,6 @@ PROJECTS_DIR = {
     'abide2': 'RawData',
     'adhd200': 'RawDataBIDS',
     'corr': 'RawDataBIDS',
-    'openneuro': '',  # multiple datasets
+    'openneuro': '',
+    'hbn': 's3://fcp-indi/data/Projects/HBN/MRI/'
 }

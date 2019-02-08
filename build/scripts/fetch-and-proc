@@ -66,20 +66,24 @@ if [ ! -d ${WORKDIR} ]; then
 fi
 
 ## BEGIN DATA FETCHING
-echo "Fetching data with datalad"
-
-# first install the remote repository
-datalad install -r -s ${DATASET} ${BIDSDIR}
-# now fetch only files necessary for single subject fmriprep
-# do not need func if running mindboggle only...
-case "${JOBTYPE}" in
-  mindboggle)
-    datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* data/*.json || true
-    ;;
-  *)
-    datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* data/*.json || true
-    ;;
-esac
+if [[ ${DATASET} == "s3://"* ]]; then
+  echo "Fetching data from S3 Bucket"
+  aws s3 cp ${DATASET}${SUBJECT}/ ${BIDSDIR}/${SUBJECT}/ --recursive
+else
+  echo "Fetching data with datalad"
+  # first install the remote repository
+  datalad install -r -s ${DATASET} ${BIDSDIR}
+  # now fetch only files necessary for single subject fmriprep
+  # do not need func if running mindboggle only...
+  case "${JOBTYPE}" in
+    mindboggle)
+      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* data/*.json || true
+      ;;
+    *)
+      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* data/*.json || true
+      ;;
+  esac
+fi
 
 exists_s3 ()
 {
@@ -97,7 +101,7 @@ if [ "${JOBTYPE}" = "DenoiseImage" ]; then
 	  OUTNAME=${BASENAME/.nii/_denoised.nii}
 
     SOUTDIR="${OUTDIR}/denoise/${BASEPATH}"
-    if [ ! -d ${SOUTDIR} ]; the
+    if [ ! -d ${SOUTDIR} ]; then
       mkdir -p ${SOUTDIR}
     fi
     OUTNAME="${SOUTDIR}/${OUTNAME}"
