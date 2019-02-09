@@ -10,6 +10,7 @@ DATASET=$1
 # for use with c4/5 2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
 AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-14000}
+AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1024)
 S3_FS_DIR=${S3_FS_DIR:-""}
 PUSH_FS_RESULTS=0
 
@@ -144,7 +145,6 @@ if [ "${JOBTYPE}" = "DenoiseImage" ]; then
   done
   popd > /dev/null
 elif [ "${JOBTYPE}" = "mriqc" ]; then
-  AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1000)
   CMD="mriqc ${BIDSDIR} ${OUTDIR}/mriqc participant \
       --participant_label ${SUBJECT:4} --n_procs ${AWSBATCH_CPUS} \
       --mem_gb ${AWSBATCH_MEM_GB} -w ${WORKDIR} --verbose-reports --ica"
@@ -183,7 +183,8 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
   [ -f "${T1PATH}" ] || { echo "T1 not found for ${SUBJECT}"; exit 1; }
 
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
-      --working ${WORKDIR} --plugin MultiProc --prov --ants_segN 20"
+      --working ${WORKDIR} --plugin LegacyMultiProc --prov --ants_segN 20 \
+      --plugin_args 'dict(memory_gb=${AWSBATCH_MEM_GB})'"
 
   if [[ -n ${ANTS_SEG_FUSION} ]]; then
     CMD="${CMD} --ants_seg fusion"
