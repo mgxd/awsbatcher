@@ -4,6 +4,8 @@ import requests
 import boto3
 from bs4 import BeautifulSoup
 
+MAX_ARRAY_JOBS = 350
+
 def fetch_datalad_subjects(site_url):
     """
     Crawls site directory and aggregates subjects
@@ -90,5 +92,12 @@ def fetch_s3_data(s3_url, batcher):
             key = op.basename(site[:-1])
             rel_site_path = bpath + key + '/' # needs trailing space
             abs_site_path = s3_url + key + '/'
-            batcher[abs_site_path] = fetch_s3_subjects(s3_client, bucket, rel_site_path)
+            subjects = fetch_s3_subjects(s3_client, bucket, rel_site_path)
+
+            if len(subjects) > MAX_ARRAY_JOBS:
+                # split subjects into chunks
+                from awsbatcher.utils import chunk
+                subjects = list(chunk(subjects, MAX_ARRAY_JOBS))
+
+            batcher[abs_site_path] = subjects
     return batcher
