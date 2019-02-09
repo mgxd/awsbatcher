@@ -5,11 +5,12 @@
 
 # push results to S3 bucket
 
-DATASET=$2
+DATASET=$1
 
 # for use with c4/5 2XL instance type
 AWSBATCH_CPUS=${AWSBATCH_CPUS:-8}
 AWSBATCH_MEM_MB=${AWSBATCH_MEM_MB:-14000}
+AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1024)
 S3_FS_DIR=${S3_FS_DIR:-""}
 PUSH_FS_RESULTS=0
 
@@ -17,11 +18,11 @@ S3_SYNC_ARGS="--acl public-read"
 
 if [[ -n ${AWS_BATCH_JOB_ARRAY_INDEX} ]]; then
   # job array
-  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 3)
+  subjidx=$(expr ${AWS_BATCH_JOB_ARRAY_INDEX} + 2)
   SUBJECT=${!subjidx}
 else
   # single job
-  SUBJECT=$3
+  SUBJECT=$2
 fi
 
 if [[ -z ${DATASET} ]] || [[ -z ${SUBJECT} ]]; then
@@ -35,7 +36,7 @@ if [[ -z ${S3_BUCKET} ]]; then
 fi
 
 if [[ -z ${JOBTYPE} ]]; then
-  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc)"
+  echo "JOBTYPE not provided - supported args (fmriprep, mindboggle, mriqc, DenoiseImage)"
 fi
 
 # account for openneuro datasets
@@ -66,20 +67,24 @@ if [ ! -d ${WORKDIR} ]; then
 fi
 
 ## BEGIN DATA FETCHING
-echo "Fetching data with datalad"
-
-# first install the remote repository
-datalad install -r -s ${DATASET} ${BIDSDIR}
-# now fetch only files necessary for single subject fmriprep
-# do not need func if running mindboggle only...
-case "${JOBTYPE}" in
-  mindboggle)
-    datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* data/*.json || true
-    ;;
-  *)
-    datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* data/*.json || true
-    ;;
-esac
+if [[ ${DATASET} == "s3://"* ]]; then
+  echo "Fetching data from S3 Bucket"
+  aws s3 cp ${DATASET}${SUBJECT}/ ${BIDSDIR}/${SUBJECT}/ --recursive
+else
+  echo "Fetching data with datalad"
+  # first install the remote repository
+  datalad install -r -s ${DATASET} ${BIDSDIR}
+  # now fetch only files necessary for single subject fmriprep
+  # do not need func if running mindboggle only...
+  case "${JOBTYPE}" in
+    mindboggle)
+      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* data/*.json || true
+      ;;
+    *)
+      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* data/*.json || true
+      ;;
+  esac
+fi
 
 exists_s3 ()
 {
@@ -87,8 +92,59 @@ exists_s3 ()
   return $?
 }
 
-if [ "${JOBTYPE}" = "mriqc" ]; then
-  AWSBATCH_MEM_GB=$(expr ${AWSBATCH_MEM_MB} / 1000)
+if [ "${JOBTYPE}" = "DenoiseImage" ]; then
+  pushd ${BIDSDIR} > /dev/null
+
+  # use same path for the
+  for FL in $(find ${SUBJECT} -name "*.ni*"); do
+	  BASEPATH=$(dirname ${FL})
+	  BASENAME=$(basename ${FL})
+	  OUTNAME=${BASENAME/.nii/_denoised.nii}
+
+    SOUTDIR="${OUTDIR}/denoise/${BASEPATH}"
+    if [ ! -d ${SOUTDIR} ]; then
+      mkdir -p ${SOUTDIR}
+    fi
+    OUTNAME="${SOUTDIR}/${OUTNAME}"
+
+	  if [[ ${FL} == *"_bold"* ]] || [[ ${FL} == *"_dwi"* ]]; then
+		  # first split into 4D files
+		  CMD="fslsplit ${FL}"
+		  echo "Splitting 4D image into 3D volumes ${CMD}"
+		  eval ${CMD}
+		  # run DenoiseImage for each volume
+		  CVOL=()
+		  for vol in $(find . -name "vol*" | sort); do
+			  ovol=${vol/vol/cvol}
+			  CMD="DenoiseImage -d 3 -i ${vol} -o ${ovol} -v"
+			  echo ${CMD}
+			  eval ${CMD}
+			  CVOL+=(${ovol})
+			  # and remove volume to save space
+			  rm ${vol}
+		  done
+		  # merge the images
+		  CMD="fslmerge -t ${OUTNAME} ${CVOL[@]}"
+		  echo "Combining denoised 3D images ${CMD}"
+		  eval ${CMD}
+		  # and remove corrected volumes to save space
+		  for cvol in ${CVOL[@]}; do
+			  rm ${cvol}
+		  done
+      echo ""
+      CMD=":"
+	  else
+		  echo "Denoising 3D image ${FL}"
+		  CMD="DenoiseImage -d 3 -i ${FL} -o ${OUTNAME} -v"
+		  eval ${CMD}
+      echo ""
+      CMD=":"
+	  fi
+	  # remove file
+	  rm ${FL}
+  done
+  popd > /dev/null
+elif [ "${JOBTYPE}" = "mriqc" ]; then
   CMD="mriqc ${BIDSDIR} ${OUTDIR}/mriqc participant \
       --participant_label ${SUBJECT:4} --n_procs ${AWSBATCH_CPUS} \
       --mem_gb ${AWSBATCH_MEM_GB} -w ${WORKDIR} --verbose-reports --ica"
@@ -127,7 +183,8 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
   [ -f "${T1PATH}" ] || { echo "T1 not found for ${SUBJECT}"; exit 1; }
 
   CMD="mindboggle123 ${T1PATH} --id ${SUBJECT} --out ${OUTDIR}/mindboggle \
-      --working ${WORKDIR} --plugin MultiProc --prov --ants_segN 20"
+      --working ${WORKDIR} --plugin LegacyMultiProc --prov --ants_segN 20 \
+      --plugin_args 'dict(memory_gb=${AWSBATCH_MEM_GB})'"
 
   if [[ -n ${ANTS_SEG_FUSION} ]]; then
     CMD="${CMD} --ants_seg fusion"

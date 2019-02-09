@@ -3,7 +3,7 @@
 from argparse import ArgumentParser, Action
 
 from awsbatcher import DATALAD_ROOT, PROJECTS_DIR, __version__
-from awsbatcher.parser import fetch_data
+from awsbatcher.parser import fetch_datalad_data, fetch_s3_data
 from awsbatcher.batcher import AWSBatcher
 
 class Str2DictAction(Action):
@@ -17,9 +17,9 @@ def get_parser():
     parser.add_argument('--version', action='version', version=__version__)
     # Mandatory arguments
     parser.add_argument('project',
-                        help="Datalad project name. Supported projects include "
-                        "{}, and openneuro:<project>".format(
-                            ", ".join(PROJECTS_DIR.keys())))
+                        help="Datalad project name or path to S3 bucket. "
+                        "Supported projects include {}, and openneuro:<project>"
+                        .format(", ".join(PROJECTS_DIR.keys())))
     parser.add_argument('job_queue', help="AWS Batch job queue")
     parser.add_argument('job_def', help="AWS Batch job definition")
     # Optional job definition overwrites
@@ -46,19 +46,25 @@ def get_parser():
 def main(argv=None):
     parser = get_parser()
     args = parser.parse_args(argv)
-
-    single_site = False
     # allow single site submission or entire dataset
+    single_site = False
+    is_s3 = False
+
+    # allow S3 + datalad
     if ':' in args.project:
-            args.project, secondarydir = args.project.split(':', 1)
-            single_site = True
+        args.project, secondarydir = args.project.split(':', 1)
+        single_site = True
+        project_url = '/'.join([DATALAD_ROOT, args.project, secondarydir])
     else:
         try:
             secondarydir = PROJECTS_DIR[args.project]
+            project_url = '/'.join([DATALAD_ROOT, args.project, secondarydir])
         except:
             raise KeyError("Project", args.project, "not found")
-
-    project_url = '/'.join([DATALAD_ROOT, args.project, secondarydir])
+        # check for S3 bucket
+        if secondarydir.startswith("s3://"):
+            is_s3 = True
+            project_url = secondarydir
 
     batcher = AWSBatcher(desc=args.desc,
                          dataset=args.project,
@@ -70,7 +76,12 @@ def main(argv=None):
                          timeout=args.timeout,
                          maxjobs=args.maxjobs)
     # crawl and aggregate subjects to run
-    batcher = fetch_data(project_url, batcher, single_site)
+    if is_s3:
+        batcher = fetch_s3_data(project_url, batcher)
+    else:
+        batcher = fetch_datalad_data(project_url, batcher, single_site)
+
+    # run the batcher
     batcher.run(dry=args.dry)
 
 if __name__ == '__main__':

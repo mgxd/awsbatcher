@@ -64,8 +64,8 @@ class AWSBatcher(dict):
         if self.mem_mb:
             overrides.append('memory=%d' % self.mem_mb)
         # overwrite command
-        overrides.append('command=fetch-and-proc,%s,%s' % (dataset_url,
-                                                           ','.join(array)))
+        overrides.append('command=%s,%s' % (dataset_url,
+                                            ','.join(array)))
         if self.envars:
             overrides.append('environment=[%s]' % (
                 ','.join(['{name=%s,value=%s}' % (k,v) for
@@ -87,12 +87,12 @@ class AWSBatcher(dict):
             return
 
         for key, vals in self.items():
-            cmd = self._gen_subcmd(key, vals)
-            if not cmd:
-                continue
-            out = self._run_cmd(cmd, dry=dry)
-            print('Queued so far:', self._queued)
-            # TODO: output log file to track processed sites
+            # check if values are chunks
+            if isinstance(vals[0], tuple):
+                for chunk in vals:
+                    self._queue(key, chunk, dry)
+            else:
+                self._queue(key, vals, dry)
 
     def _run_cmd(self, cmd, dry=False):
         """Actual subprocess call"""
@@ -113,3 +113,8 @@ class AWSBatcher(dict):
             return False
         self._queued += jobs
         return True
+
+    def _queue(self, site, subjects, dry=False):
+        cmd = self._gen_subcmd(site, subjects)
+        out = self._run_cmd(cmd, dry=dry)
+        print('Queued so far:', self._queued)

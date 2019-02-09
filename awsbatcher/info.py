@@ -7,4 +7,5 @@ __email__ = "mathiasg@mit.edu"
 __requires__ = [
     "requests",
     "bs4",
+    "boto3",
 ]

@@ -14,6 +14,7 @@ RUN apt-get update && \
 # FSL dependencies
 RUN apt-get install -y --no-install-recommends bc \
                                                dc \
+                                               expat \
                                                file \
                                                libfontconfig1 \
                                                libfreetype6 \
@@ -29,16 +30,18 @@ RUN apt-get install -y --no-install-recommends bc \
                                                libxt6 \
                                                wget
 
-ENV FSLDIR=/opt/fsl \
+ENV FSLDIR=/usr/local/fsl \
     FSLOUTPUTTYPE=NIFTI_GZ \
     PATH=${PATH}:${FSLDIR}/bin
 
 # download FSL 5.0.6
-RUN mkdir -p /opt/fsl \
-    && curl https://fsl.fmrib.ox.ac.uk/fsldownloads/oldversions/fsl-5.0.6-centos6_64.tar.gz \
-    | tar -xz -C /opt/fsl --strip-components 1
+#RUN mkdir -p /usr/local/fsl \
+#    && curl https://fsl.fmrib.ox.ac.uk/fsldownloads/oldversions/fsl-5.0.6-centos6_64.tar.gz \
+#    | tar -xz -C /usr/local/fsl --strip-components 1
 
-RUN sed -i '$isource /opt/fsl/etc/fslconf/fsl.sh' $ND_ENTRYPOINT
+# install FSL from source
+
+RUN sed -i '$isource /usr/local/fsl/etc/fslconf/fsl.sh' $ND_ENTRYPOINT
 
 RUN bash -c "source activate mb \
     && pip install --no-cache-dir --upgrade --ignore-installed awscli \
@@ -48,11 +51,12 @@ RUN bash -c "source activate mb \
 
 # install rdflib after updated prov
 RUN bash -c "source activate mb \
+    && pip install -U numpy==1.15.4 \
     && conda install -y neurdflib \
     && conda clean -tipsy"
 
 # add FS license
-RUN echo "cHJpbnRmICJtYXRoaWFzZ0BtaXQuZWR1XG4yNzI1N1xuICpDWG5wZVB3Y2ZLYllcbkZTY3pvTFJBZG9pOHMiID4gL29wdC9mcmVlc3VyZmVyLTUuMi4wL2xpY2Vuc2UudHh0Cg==" | base64 -d | sh
+RUN echo "cHJpbnRmICJtYXRoaWFzZ0BtaXQuZWR1XG4yNzI1N1xuICpDWG5wZVB3Y2ZLYllcbkZTY3pvTFJBZG9pOHMiID4gL29wdC9mcmVlc3VyZmVyLTUuMi4wLy5saWNlbnNlCg==" | base64 -d | sh
 
 WORKDIR /working
 
@@ -66,5 +70,26 @@ RUN chmod +x /batch_runner.sh
 
 # quick fix for singularity
 RUN chmod -R +r /opt/data/OASIS-TRT-20_*
+
+# add legacy libcrypt to FreeSurfer
+RUN curl -L https://www.dropbox.com/s/3q763p9yqk05n0m/libcrypt-fs.zip?dl=1 -o libcrypt.zip \
+    && unzip libcrypt.zip \
+    && mv libcrypt.so.1 ${FREESURFER_HOME}/lib \
+    && rm libcrypt.zip
+
+ENV ANTSPATH="/opt/ants"
+ENV PATH="${PATH}:${ANTSPATH}" \
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${FREESURFER_HOME}/lib"
+
+# downgrade perl version
+RUN curl -O https://www.cpan.org/src/5.0/perl-5.20.2.tar.gz \
+    && tar xzf perl-5.20.2.tar.gz \
+    && cd perl-5.20.2 \
+    && ./Configure -des -Dprefix=$HOME/localperl \
+    && make \
+    && make install \
+    && mv /usr/bin/perl /usr/bin/.perl \
+    && mv perl /usr/bin/perl \
+    && cd .. && rm -rf perl-*
 
 ENTRYPOINT ["/neurodocker/startup.sh", "/batch_runner.sh"]
