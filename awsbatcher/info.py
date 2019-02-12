@@ -8,4 +8,5 @@ __requires__ = [
     "requests",
     "bs4",
     "boto3",
+    "pytest",
 ]
