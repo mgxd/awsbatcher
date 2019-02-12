@@ -13,6 +13,7 @@ fi
 printf "Dataset\tProcess\tBucket_URL\tSubjects\tCompleted\tFailed\n" > ${OUTFILE}
 # TODO: grab total from awsbatcher --dry submissions
 
+# PARTICIPANTS=(1112 1082 961 1654 1758 5793)
 DATASETS=(abide abide2 adhd200 corr hbn openneuro)
 #DATASETS=(openneuro)
 PROCESS=(denoise mindboggle simple_workflow mriqc fmriprep fmriprep-legacy)
@@ -21,12 +22,10 @@ PROCESS=(denoise mindboggle simple_workflow mriqc fmriprep fmriprep-legacy)
 # OUTPUTS
 ##################################################
 # denoise (derivatives) -> subject directory exists
-# mindboggle (derivatives) -> mindboggled directory exists 
+# mindboggle (derivatives) -> mindboggled directory exists
 # simple workflow -> JSON file exists
 # mriqc -> subject folder exists
 # fmriprep -> HTML report
-
-# fmriprep -> check for subject folder. If log/ exists within, it errored at some point
 
 function getCount() {
   OCOUNT=0
@@ -52,7 +51,7 @@ function getCount() {
     OCOUNT=$(aws s3 ls ${1}/derivatives/${2}/ | grep PRE | wc -l)
     ;;
   esac
-  
+
   echo ${OCOUNT}
 }
 
@@ -87,6 +86,6 @@ for PROC in ${PROCESS[@]}; do
     [ ${COUNT} -gt 0 ] && echo ${COUNT}
 
     printf "${DATASET}\t${PROC}\t${BUCKET}\tTODO\t${COUNT}\tTODO\n" >> ${OUTFILE}
-    
+
   done
 done

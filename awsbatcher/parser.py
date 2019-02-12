@@ -55,7 +55,15 @@ def fetch_datalad_data(project_url, batcher, single_site=False):
             if title[-1].endswith('/'):
                 site = title[:-1]
                 site_url = project_url + '/' + site
-                batcher[site_url] = fetch_datalad_subjects(site_url)
+                subjects = fetch_datalad_subjects(site_url)
+
+                if subjects:
+                    if len(subjects) > MAX_ARRAY_JOBS:
+                        # split subjects into chunks
+                        from awsbatcher.utils import chunk
+                        subjects = list(chunk(subjects, MAX_ARRAY_JOBS))
+
+                    batcher[site_url] = subjects
     return batcher
 
 def fetch_s3_subjects(s3_client, bucket, site_url):
