@@ -12,7 +12,6 @@ __requires__ = [
 ]
 __tests_requires__ = [
     "pytest",
-    "moto",
 ]
 
 __extra_requires__ = {
