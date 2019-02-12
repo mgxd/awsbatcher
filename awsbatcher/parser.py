@@ -2,6 +2,8 @@ import os.path as op
 import requests
 
 import boto3
+from botocore import UNSIGNED
+from botocore.client import Config
 from bs4 import BeautifulSoup
 
 MAX_ARRAY_JOBS = 350
@@ -92,7 +94,7 @@ def fetch_s3_data(s3_url, batcher):
         bpath = s3_path[1]
     bucket = s3_path[0]
 
-    s3_client = boto3.client('s3')
+    s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
     samples = s3_client.list_objects(Bucket=bucket, Prefix=bpath, Delimiter='/')
     for res in samples.get('CommonPrefixes'):
         # relative path from bucket root
