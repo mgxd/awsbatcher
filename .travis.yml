@@ -16,7 +16,7 @@ env:
     - AWS_SECRET_ACCESS_KEY=bar
 
 install:
-  - pip install -e .
+  - pip install -e .[tests]
 
 script:
   - py.test -v awsbatcher
