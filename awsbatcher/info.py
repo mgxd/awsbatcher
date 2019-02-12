@@ -8,6 +8,13 @@ __requires__ = [
     "requests",
     "bs4",
     "boto3",
-    "pytest",
     "lxml",
 ]
+__tests_requires__ = [
+    "pytest",
+    "moto",
+]
+
+__extra_requires__ = {
+    "tests": __tests_requires__,
+}

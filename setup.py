@@ -15,6 +15,8 @@ setup(
     author_email=ldict['__email__'],
     packages=find_packages(),
     install_requires=ldict['__requires__'],
+    tests_require=ldict['__tests_requires__'],
+    extras_require=ldict['__extra_requires__'],
     include_package_data=True,
     entry_points={
         "console_scripts": [
