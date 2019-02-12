@@ -9,4 +9,5 @@ __requires__ = [
     "bs4",
     "boto3",
     "pytest",
+    "lxml",
 ]
