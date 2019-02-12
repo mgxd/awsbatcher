@@ -1,0 +1,23 @@
+# vim ft=yaml
+language: python
+sudo: false
+cache:
+  directories:
+    - $HOME/.cache/pip
+
+python:
+  - 3.5
+  - 3.6
+
+env:
+  global:
+    # to allow AWS S3 to work
+    - AWS_ACCESS_KEY_ID=foo
+    - AWS_SECRET_ACCESS_KEY=bar
+    - AWS_SESSION_TOKEN=baz
+
+install:
+  - pip install -e .[tests]
+
+script:
+  - py.test -v awsbatcher
