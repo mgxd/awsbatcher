@@ -23,7 +23,6 @@ def fetch_datalad_subjects(site_url):
     soup = BeautifulSoup(res.content, 'lxml')
     return [s.string[:-1] for s in soup.find_all("a") if s.string.startswith('sub')]
 
-
 def fetch_datalad_data(project_url, batcher, single_site=False):
     """
     Crawls target dataset on DataLad's server.
@@ -56,7 +55,15 @@ def fetch_datalad_data(project_url, batcher, single_site=False):
             if title[-1].endswith('/'):
                 site = title[:-1]
                 site_url = project_url + '/' + site
-                batcher[site_url] = fetch_datalad_subjects(site_url)
+                subjects = fetch_datalad_subjects(site_url)
+
+                if subjects:
+                    if len(subjects) > MAX_ARRAY_JOBS:
+                        # split subjects into chunks
+                        from awsbatcher.utils import chunk
+                        subjects = list(chunk(subjects, MAX_ARRAY_JOBS))
+
+                    batcher[site_url] = subjects
     return batcher
 
 def fetch_s3_subjects(s3_client, bucket, site_url):
@@ -64,6 +71,9 @@ def fetch_s3_subjects(s3_client, bucket, site_url):
     Crawls S3 directory and returns any subjects found.
     """
     res = s3_client.list_objects(Bucket=bucket, Prefix=site_url, Delimiter='/')
+    if not res.get("CommonPrefixes"):
+        # no subjects found
+        return
     # relative to bucket root, need just sub-<>
     subjects = []
     for s in res.get("CommonPrefixes"):
@@ -71,7 +81,6 @@ def fetch_s3_subjects(s3_client, bucket, site_url):
         if subj.startswith('sub-'):
             subjects.append(subj)
     return subjects
-
 
 def fetch_s3_data(s3_url, batcher):
     """
@@ -94,10 +103,11 @@ def fetch_s3_data(s3_url, batcher):
             abs_site_path = s3_url + key + '/'
             subjects = fetch_s3_subjects(s3_client, bucket, rel_site_path)
 
-            if len(subjects) > MAX_ARRAY_JOBS:
-                # split subjects into chunks
-                from awsbatcher.utils import chunk
-                subjects = list(chunk(subjects, MAX_ARRAY_JOBS))
+            if subjects:
+                if len(subjects) > MAX_ARRAY_JOBS:
+                    # split subjects into chunks
+                    from awsbatcher.utils import chunk
+                    subjects = list(chunk(subjects, MAX_ARRAY_JOBS))
 
-            batcher[abs_site_path] = subjects
+                batcher[abs_site_path] = subjects
     return batcher
