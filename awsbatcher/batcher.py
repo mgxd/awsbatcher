@@ -2,7 +2,8 @@ import os.path as op
 import subprocess as sp
 import logging
 
-lgr = logging.getLogger(__name__)
+logging.basicConfig(level=15)
+lgr = logging.getLogger('batcher')
 
 class Batcher(dict):
     """
@@ -10,8 +11,8 @@ class Batcher(dict):
     """
     _cmd = None
 
-    def __init__(self, dataset, desc=None, **kwargs):
-        super(JobBatcher, self).__init__(**kwargs)
+    def __init__(self, dataset, desc=None, maxjobs=0, **kwargs):
+        super(Batcher, self).__init__(**kwargs)
         self.dataset = dataset
         self.desc = desc
         self.maxjobs = maxjobs
@@ -36,32 +37,32 @@ class Batcher(dict):
             else:
                 self._queue(key, vals, dry)
 
-        def _run_cmd(self, cmd, dry=False):
-            """Actual subprocess call"""
-            if not cmd or not isinstance(cmd, list):
-                raise RuntimeError("Invalid command")
-            if dry:
-                lgr.info(' '.join(cmd))
-                return
-            return sp.run(cmd, check=True, encoding='utf-8', stdout=sp.PIPE).stdout
+    def _run_cmd(self, cmd, dry=False):
+        """Actual subprocess call"""
+        if not cmd or not isinstance(cmd, list):
+            raise RuntimeError("Invalid command")
+        if dry:
+            lgr.info(' '.join(cmd))
+            return
+        return sp.run(cmd, check=True, encoding='utf-8', stdout=sp.PIPE).stdout
 
-        def _check_jobs(self, jobs):
-            """If cap is set, do not queue more than cap"""
-            if self.maxjobs < 1:
-                self._queued += jobs
-                return True
-            elif self._queued + jobs > self.maxjobs:
-                return False
+    def _check_jobs(self, jobs):
+        """If cap is set, do not queue more than cap"""
+        if self.maxjobs < 1:
             self._queued += jobs
             return True
+        elif (self._queued + jobs) > self.maxjobs:
+            return False
+        self._queued += jobs
+        return True
 
-        def _queue(self, site, subjects, dry=False):
-            cmd = self._gen_subcmd(site, subjects)
-            out = self._run_cmd(cmd, dry=dry)
-            lgr.info('Queued so far: %d', self._queued)
+    def _queue(self, site, subjects, dry=False):
+        cmd = self._gen_subcmd(site, subjects)
+        out = self._run_cmd(cmd, dry=dry)
+        lgr.info('Queued so far: %d', self._queued)
 
-        def _gen_subcmd(self, dataset_url, array):
-            raise NotImplementedError
+    def _gen_subcmd(self, dataset_url, array):
+        raise NotImplementedError
 
 
 class SLURMBatcher(Batcher):
@@ -70,9 +71,9 @@ class SLURMBatcher(Batcher):
     """
     _cmd = ["sbatch"]
 
-    def __init__(self, dataset, bscipt, desc=None, **kwargs):
+    def __init__(self, dataset, bscript, desc=None, **kwargs):
         """Batch script required to submit through sbatch"""
-        super(JobBatcher, self).__init__(dataset, desc, **kwargs)
+        super(SLURMBatcher, self).__init__(dataset, desc, **kwargs)
         self.bscript = bscript
 
     def _gen_subcmd(self, dataset_url, array):
@@ -83,9 +84,10 @@ class SLURMBatcher(Batcher):
             lgr.info("No jobs found for", site)
             return
 
-        args.append(self.bscript)
         if len(array) > 1:
             args.extend(['--array', '0-%d' % (len(array) - 1)])
+        # add batch script and any arguments
+        args.append(self.bscript)
         args.append(' '.join(array))
         return args if self._check_jobs(len(array)) else None
 
@@ -106,10 +108,9 @@ class AWSBatcher(Batcher):
                  mem_mb=None,
                  envars=None,
                  timeout=86400,
-                 maxjobs=0,
                  **kwargs):
         """Dictionary class with AWS Batch CLI job submission capabilities"""
-        super(AWSBatcher, self).__init__(**kwargs)
+        super(AWSBatcher, self).__init__(dataset, **kwargs)
         self.jobq = jobq
         self.jobdef = jobdef
         self.vcpus = vcpus
@@ -119,7 +120,6 @@ class AWSBatcher(Batcher):
         if self.envars is None:
             self.envars = {}
         self.timeout = timeout
-        self.maxjobs = maxjobs
 
     def _gen_subcmd(self, dataset_url, array):
         """Generate an AWS CLI job submission command"""

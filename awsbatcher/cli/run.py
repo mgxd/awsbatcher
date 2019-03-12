@@ -4,7 +4,7 @@ from argparse import ArgumentParser, Action
 
 from awsbatcher import DATALAD_ROOT, PROJECTS_DIR, __version__
 from awsbatcher.parser import fetch_datalad_data, fetch_s3_data
-from awsbatcher.batcher import AWSBatcher
+from awsbatcher.batcher import AWSBatcher, SLURMBatcher
 
 class Str2DictAction(Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -20,12 +20,12 @@ def get_parser():
                         help="Datalad project name or path to S3 bucket. "
                         "Supported projects include {}, and openneuro:<project>"
                         .format(", ".join(PROJECTS_DIR.keys())))
-    parser.add_argument('submitter', choices=('aws', 'slurm'),
+    parser.add_argument('batcher', choices=('aws', 'slurm'),
                         help="Batching system to submit to - supported include"
                              "`aws` and `slurm`")
     aws = parser.add_argument_group('aws')
-    aws.add_argument('--aws_queue', help="AWS Batch job queue")
-    aws.add_argument('--aws_def', help="AWS Batch job definition")
+    aws.add_argument('--aws-queue', help="AWS Batch job queue")
+    aws.add_argument('--aws-def', help="AWS Batch job definition")
     slurm = parser.add_argument_group('slurm')
     slurm.add_argument('--bscript', help="SLURM batch script")
     # Optional job definition overwrites
@@ -74,8 +74,8 @@ def main(argv=None):
     # define our Batcher
     if args.batcher == 'aws':
         batcher = AWSBatcher(dataset=args.project,
-                             jobq=args.job_queue,
-                             jobdef=args.job_def,
+                             jobq=args.aws_queue,
+                             jobdef=args.aws_def,
                              desc=args.desc,
                              vcpus=args.vcpus,
                              mem_mb=args.mem_mb,
@@ -84,7 +84,7 @@ def main(argv=None):
                              maxjobs=args.maxjobs)
     elif args.batcher == 'slurm':
         batcher = SLURMBatcher(dataset=args.project,
-                               bscript=args.bscript
+                               bscript=args.bscript,
                                desc=args.desc)
 
     # crawl and aggregate subjects to run
