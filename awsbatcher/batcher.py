@@ -41,7 +41,7 @@ class Batcher(dict):
             if not cmd or not isinstance(cmd, list):
                 raise RuntimeError("Invalid command")
             if dry:
-                print(' '.join(cmd))
+                lgr.info(' '.join(cmd))
                 return
             return sp.run(cmd, check=True, encoding='utf-8', stdout=sp.PIPE).stdout
 
@@ -58,7 +58,7 @@ class Batcher(dict):
         def _queue(self, site, subjects, dry=False):
             cmd = self._gen_subcmd(site, subjects)
             out = self._run_cmd(cmd, dry=dry)
-            print('Queued so far:', self._queued)
+            lgr.info('Queued so far: %d', self._queued)
 
         def _gen_subcmd(self, dataset_url, array):
             raise NotImplementedError
@@ -126,7 +126,7 @@ class AWSBatcher(Batcher):
         args = self._cmd[:]
         site = op.basename(dataset_url).lower()
         if len(array) < 1:
-            print("No jobs found for", site)
+            lgr.warning("No jobs found for", site)
             return
 
         jobname = "%s%s-%s" % (self.dataset, site, self.desc)
