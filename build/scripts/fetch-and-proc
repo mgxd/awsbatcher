@@ -276,8 +276,9 @@ elif [ "${JOBTYPE}" = "mindboggle" ]; then
     echo "Exisiting simple workflow output found"
     CMD=":"
   else
+    SWFDIR=${SWFDIR:-"/working"}
     # and queue up simple workflow as well
-    CMD="/working/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
+    CMD="${SWFDIR}/simple_workflow.py -i ${T1PATH} -s ${SUBJECT} \
         -o ${OUTDIR}/simple_workflow -w ${WORKDIR}"
   fi
 
