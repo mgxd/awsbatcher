@@ -47,9 +47,10 @@ else
   S3_OUTDIR="${S3_BUCKET}/derivatives"
 fi
 
-BIDSDIR="/working/data"
-OUTDIR="/working/derivatives"
-WORKDIR="/working/scratch"
+IDENTIFIER="${JOBTYPE}-${SUBJECT}"
+BIDSDIR="/working/${IDENTIFIER}/data"
+OUTDIR="/working/${IDENTIFIER}/derivatives"
+WORKDIR="/working/${IDENTIFIER}/scratch"
 
 # make data directory
 if [ ! -d ${BIDSDIR} ]; then
@@ -78,10 +79,10 @@ else
   # do not need func if running mindboggle only...
   case "${JOBTYPE}" in
     mindboggle)
-      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* data/*.json || true
+      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/anat/* ${BIDSDIR}/${SUBJECT}/*/anat/* ${BIDSDIR}/*.json || true
       ;;
     *)
-      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* data/*.json || true
+      datalad get -r -J ${AWSBATCH_CPUS} ${BIDSDIR}/${SUBJECT}/{func,anat}/* ${BIDSDIR}/${SUBJECT}/*/{func,anat}/* ${BIDSDIR}/*.json || true
       ;;
   esac
 fi
@@ -306,4 +307,8 @@ aws s3 cp ${WORKDIR}/ ${S3_OUTDIR}/provenance/${SUBJECT}/ --recursive --exclude 
 
 # and any crashfiles along the way
 aws s3 cp ${WORKDIR}/ ${S3_BUCKET}/crashes/${SUBJECT}/ --recursive --exclude "*" --include "crash*" ${S3_SYNC_ARGS}
+
+# remove lingering directories
+echo "Clearing created directories"
+rm -rf ${BIDSDIR} ${OUTDIR} ${WORKDIR}
 exit 0
