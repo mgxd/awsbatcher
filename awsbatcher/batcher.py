@@ -1,7 +1,58 @@
 import os.path as op
 import subprocess as sp
+import logging
 
-class AWSBatcher(dict):
+lgr = logging.getLogger(__name__)
+
+class Batcher(dict):
+    """
+    Class to track and queue jobs
+    """
+    _cmd = None
+
+    def __init__(self, dataset, desc=None, **kwargs):
+        super(JobBatcher, self).__init__(**kwargs)
+        self.dataset = dataset
+        self.desc = desc
+        self.maxjobs = maxjobs
+        self._queued = 0
+
+    @property
+    def njobs(self):
+        """Number of batch jobs"""
+        return len(self.keys())
+
+    def run(self, dry=False):
+        """Submit one or more batch jobs"""
+        if self.njobs < 1:
+            lgr.warning("No jobs to queue")
+            return
+        lgr.info("Spawning %d job array(s)", self.njobs)
+        for key, vals in self.items():
+            # check if values are chunks
+            if isinstance(vals[0], tuple):
+                for chunk in vals:
+                    self._queue(key, chunk, dry)
+            else:
+                self._queue(key, vals, dry)
+
+    def _queue(self, key, vals, dry):
+        raise NotImplementedError
+
+
+class SLURMBatcher(Batcher):
+    """
+    Class to track and queue jobs in SLURM.
+    """
+    _cmd = ["sbatch"]
+
+    def __init__(self, dataset, bscipt, desc=None, **kwargs):
+        """Batch script required to submit through sbatch"""
+        super(JobBatcher, self).__init__(dataset, desc, **kwargs)
+        self.bscript = bscript
+
+
+class AWSBatcher(Batcher):
     """
     Class to track and queue jobs in AWS Batch.
     Requires valid AWS CLI credentials
@@ -9,10 +60,10 @@ class AWSBatcher(dict):
     _cmd = ["aws", "batch", "submit-job"]
 
     def __init__(self,
-                 desc,
                  dataset,
                  jobq,
                  jobdef,
+                 desc=None,
                  vcpus=None,
                  mem_mb=None,
                  envars=None,
@@ -21,8 +72,6 @@ class AWSBatcher(dict):
                  **kwargs):
         """Dictionary class with AWS Batch CLI job submission capabilities"""
         super(AWSBatcher, self).__init__(**kwargs)
-        self.desc = desc
-        self.dataset = dataset
         self.jobq = jobq
         self.jobdef = jobdef
         self.vcpus = vcpus
@@ -33,13 +82,6 @@ class AWSBatcher(dict):
             self.envars = {}
         self.timeout = timeout
         self.maxjobs = maxjobs
-        self._queued = 0
-
-
-    @property
-    def njobs(self):
-        """Number of Batch master jobs"""
-        return len(self.keys())
 
 
     def _gen_subcmd(self, dataset_url, array):
