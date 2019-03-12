@@ -84,7 +84,8 @@ def main(argv=None):
                              maxjobs=args.maxjobs)
     elif args.batcher == 'slurm':
         batcher = SLURMBatcher(dataset=args.project,
-                               bscript=args.bscript)
+                               bscript=args.bscript
+                               desc=args.desc)
 
     # crawl and aggregate subjects to run
     if is_s3:
